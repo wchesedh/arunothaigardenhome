@@ -2,7 +2,7 @@
 
 export const dynamic = 'force-dynamic'
 
-import { supabase } from '@/lib/supabaseClient'
+
 // ...rest of your code
 
 export default function ContractsPage() {
