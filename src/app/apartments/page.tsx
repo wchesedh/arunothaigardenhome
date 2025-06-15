@@ -4,7 +4,8 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import ApartmentFormModal from '@/components/ApartmentFormModal'
 import AdminLayout from '@/components/layouts/AdminLayout'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Pencil, Trash2, Eye } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 
 type Apartment = {
   id: string
@@ -16,6 +17,7 @@ type Apartment = {
 }
 
 export default function ApartmentsPage() {
+  const router = useRouter()
   const [apartments, setApartments] = useState<Apartment[]>([])
   const [search, setSearch] = useState('')
   const [perPage, setPerPage] = useState(10)
@@ -95,6 +97,10 @@ export default function ApartmentsPage() {
     } else {
       alert('Error deleting apartment')
     }
+  }
+
+  const handleViewDetails = (apartmentId: string) => {
+    router.push(`/apartments/${apartmentId}`)
   }
 
   return (
@@ -177,6 +183,13 @@ export default function ApartmentsPage() {
                     <td className="px-4 py-2">{apt.base_price.toLocaleString()} THB</td>
                     <td className="px-4 py-2">{apt.room_count}</td>
                     <td className="px-4 py-2 space-x-2">
+                      <button
+                        className="text-green-600 hover:text-green-800"
+                        title="View Details"
+                        onClick={() => handleViewDetails(apt.id)}
+                      >
+                        <Eye className="w-5 h-5" />
+                      </button>
                       <button
                         className="text-blue-600 hover:text-blue-800"
                         title="Edit"
