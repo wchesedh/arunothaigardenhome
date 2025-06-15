@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { createPortal } from 'react-dom';
+
 
 type Apartment = {
   id?: string;
