@@ -172,7 +172,7 @@ export default function DashboardPage() {
               </div>
               <div className="text-3xl font-bold text-gray-800 mb-2">{stats.totalTenants}</div>
               <div className="text-sm text-gray-600">
-                {stats.activeRentals} active tenants
+                {/* {stats.activeRentals} active tenants */}
               </div>
             </div>
 
