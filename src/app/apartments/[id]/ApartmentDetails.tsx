@@ -490,21 +490,65 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
     }
   };
 
-  const hasActiveRental = apartmentTenants.some(group => group.status === 'active');
+  const hasActiveRental = apartmentTenants.some(group => 
+    group.status === 'active' && group.payment_status !== 'paid'
+  );
 
-  const calculateNextDueDate = (currentDueDate: string) => {
-    const nextMonth = new Date(currentDueDate)
+  // Add this helper function to calculate rental dates
+  const calculateRentalDates = (startDate: Date, durationMonths: number = 1) => {
+    const endDate = new Date(startDate)
+    endDate.setMonth(endDate.getMonth() + durationMonths)
+    return {
+      start: startDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split('T')[0]
+    }
+  }
+
+  // Add this helper to get the next available start date
+  const getNextAvailableStartDate = (rentals: ApartmentTenant[]) => {
+    const today = new Date()
+    const activeRentals = rentals.filter(r => r.status === 'active' || r.status === 'completed')
+    
+    if (activeRentals.length === 0) {
+      return today.toISOString().split('T')[0]
+    }
+
+    // Find the latest end date among active rentals
+    const latestEndDate = activeRentals.reduce((latest, rental) => {
+      const endDate = new Date(rental.due_date)
+      return endDate > latest ? endDate : latest
+    }, new Date(0))
+
+    // If the latest end date is in the past, use today
+    if (latestEndDate < today) {
+      return today.toISOString().split('T')[0]
+    }
+
+    // Otherwise, use the day after the latest end date
+    const nextDay = new Date(latestEndDate)
+    nextDay.setDate(nextDay.getDate() + 1)
+    return nextDay.toISOString().split('T')[0]
+  }
+
+  // Modify the calculateNextDueDate function
+  const calculateNextDueDate = (currentDueDate: string, startDate?: Date) => {
+    const start = startDate || new Date()
+    const nextMonth = new Date(start)
     nextMonth.setMonth(nextMonth.getMonth() + 1)
     return nextMonth.toISOString().split('T')[0]
   }
 
+  // Modify handleOpenPaymentModal
   const handleOpenPaymentModal = (group: ApartmentTenant) => {
     setSelectedRentalForPayment(group)
-    setNextDueDate(calculateNextDueDate(group.due_date))
+    const today = new Date()
+    const nextDates = calculateRentalDates(today)
+    setNextDueDate(nextDates.end)
     setRenewalTenants(group.members.map(m => m.tenant))
     setShowPaymentModal(true)
   }
 
+  // Modify handlePayment
   const handlePayment = async () => {
     if (!selectedRentalForPayment) return;
     
@@ -524,18 +568,21 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
 
       if (paymentError) throw paymentError
 
-      if (renewRental) {
+      if (renewRental && selectedRentalForPayment) {
+        // Calculate new rental dates starting from today
+        const newDates = calculateRentalDates(today)
+        
         // Create a new rental record for the next month
         const { data: newRental, error: newRentalError } = await supabase
           .from('apartment_tenants')
           .insert({
             apartment_id: selectedRentalForPayment.apartment_id,
-            assigned_date: today.toISOString(),
-            due_date: nextDueDate,
+            assigned_date: newDates.start,
+            due_date: newDates.end,
             price: selectedRentalForPayment.price,
             payment_status: 'unpaid',
             status: 'active',
-            previous_rental_id: selectedRentalForPayment.id // Add reference to previous rental
+            previous_rental_id: selectedRentalForPayment.id
           })
           .select()
           .single()
@@ -1098,8 +1145,23 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                         key={group.id}
                         className={`bg-white border rounded-xl p-4 space-y-4 hover:shadow-lg transition-all duration-200 relative ${
                           isCurrentRental ? 'border-2 border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
-                        }`}
+                        } ${group.payment_status === 'paid' ? 'overflow-hidden' : ''}`}
                       >
+                        {/* Watermark for paid rentals */}
+                        {group.payment_status === 'paid' && (
+                          <div className="absolute inset-0 pointer-events-none select-none">
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="relative w-64 h-64 flex items-center justify-center">
+                                {/* Simple circular border */}
+                                <div className="absolute inset-0 border-[3px] border-green-300/30 rounded-full"></div>
+                                {/* Text with stamp effect */}
+                                <div className="transform -rotate-45 text-green-300/40 font-bold text-5xl tracking-widest uppercase">
+                                  PAID
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                         {/* Current rental badge */}
                         {isCurrentRental && (
                           <div className="absolute -top-3 left-4 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-sm flex items-center gap-1.5 z-10">
@@ -1122,8 +1184,12 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                                 <Calendar className="w-4 h-4 text-blue-600" />
                               </div>
                               <div>
-                                <h3 className="text-base font-semibold text-gray-900">
-                                  {`Rental Group ${new Date(group.created_at).toLocaleDateString()}`}
+                                <h3 className="text-lg font-semibold text-gray-800">
+                                  {`Rental Group ${new Date(group.created_at).toLocaleDateString('en-US', {
+                                    year: 'numeric',
+                                    month: 'long',
+                                    day: 'numeric'
+                                  })}`}
                                 </h3>
                                 {group.status === 'cancelled' && (
                                   <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 mt-1">
@@ -1261,20 +1327,22 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                                               <Pencil className="w-4 h-4" />
                                               Edit Rental
                                             </button>
-                                            <button
-                                              onClick={() => {
-                                                setGroupToCancel({
-                                                  id: group.id,
-                                                  date: new Date(group.created_at).toLocaleDateString()
-                                                });
-                                                setShowCancelConfirm(true);
-                                                setShowMoreOptions(null);
-                                              }}
-                                              className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
-                                            >
-                                              <XCircle className="w-4 h-4" />
-                                              Cancel Rental
-                                            </button>
+                                            {group.status === 'active' && group.payment_status !== 'paid' && (
+                                              <button
+                                                onClick={() => {
+                                                  setGroupToCancel({
+                                                    id: group.id,
+                                                    date: group.due_date
+                                                  });
+                                                  setShowCancelConfirm(true);
+                                                  setShowMoreOptions(null);
+                                                }}
+                                                className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
+                                              >
+                                                <XCircle className="w-4 h-4" />
+                                                Cancel Rental
+                                              </button>
+                                            )}
                                           </>
                                         ) : (
                                           <button
@@ -1486,6 +1554,7 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
             fetchApartmentTenants()
             setShowAssignModal(false)
           }}
+          nextAvailableStartDate={getNextAvailableStartDate(apartmentTenants)}
         />
       )}
 

@@ -26,9 +26,10 @@ type Props = {
   apartmentName: string;
   onClose: () => void;
   onSaved: () => void;
+  nextAvailableStartDate: string;
 };
 
-export default function AssignTenantModal({ apartmentId, apartmentName, onClose, onSaved }: Props) {
+export default function AssignTenantModal({ apartmentId, apartmentName, onClose, onSaved, nextAvailableStartDate }: Props) {
   const [selectedTenants, setSelectedTenants] = useState<Tenant[]>([]);
   const [availableTenants, setAvailableTenants] = useState<Tenant[]>([]);
   const [loading, setLoading] = useState(true);
@@ -53,17 +54,15 @@ export default function AssignTenantModal({ apartmentId, apartmentName, onClose,
   }, []);
 
   useEffect(() => {
-    // Set assigned date to today
-    const today = new Date();
-    const formattedToday = today.toISOString().split('T')[0];
-    setAssignedDate(formattedToday);
+    // Set assigned date to next available start date
+    setAssignedDate(nextAvailableStartDate);
 
     // Set due date to same day next month
-    const nextMonth = new Date(today);
+    const nextMonth = new Date(nextAvailableStartDate);
     nextMonth.setMonth(nextMonth.getMonth() + 1);
     const formattedNextMonth = nextMonth.toISOString().split('T')[0];
     setDueDate(formattedNextMonth);
-  }, []);
+  }, [nextAvailableStartDate]);
 
   const fetchApartmentDetails = async () => {
     try {
@@ -309,7 +308,17 @@ export default function AssignTenantModal({ apartmentId, apartmentName, onClose,
               <input
                 type="date"
                 value={assignedDate}
-                onChange={(e) => setAssignedDate(e.target.value)}
+                min={nextAvailableStartDate}
+                onChange={(e) => {
+                  const selectedDate = e.target.value;
+                  if (selectedDate >= nextAvailableStartDate) {
+                    setAssignedDate(selectedDate);
+                    // Update due date to be one month after the new start date
+                    const nextMonth = new Date(selectedDate);
+                    nextMonth.setMonth(nextMonth.getMonth() + 1);
+                    setDueDate(nextMonth.toISOString().split('T')[0]);
+                  }
+                }}
                 className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
@@ -320,7 +329,13 @@ export default function AssignTenantModal({ apartmentId, apartmentName, onClose,
               <input
                 type="date"
                 value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
+                min={assignedDate}
+                onChange={(e) => {
+                  const selectedDate = e.target.value;
+                  if (selectedDate >= assignedDate) {
+                    setDueDate(selectedDate);
+                  }
+                }}
                 className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
