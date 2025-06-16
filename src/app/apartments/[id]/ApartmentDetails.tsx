@@ -146,10 +146,13 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
 
       // Check for rentals that need to be marked as completed
       const today = new Date()
+      const currentRental = getCurrentRental(data || [])
+      
       const rentalsToUpdate = (data || []).filter(rental => 
         rental.status === 'active' && 
         rental.payment_status === 'paid' && 
-        new Date(rental.due_date) < today
+        new Date(rental.due_date) < today &&
+        (!currentRental || rental.id !== currentRental.id) // Don't update if it's the current rental
       )
 
       if (rentalsToUpdate.length > 0) {
@@ -647,12 +650,28 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
   // Find the current rental group (today between created_at/assigned_date and due_date)
   const getCurrentRental = (rentals: ApartmentTenant[]) => {
     const today = new Date();
-    return rentals.find(rental => {
+    // Rentals whose period includes today
+    const inPeriod = rentals.filter(rental => {
       const start = new Date(rental.created_at); // or rental.assigned_date
       const end = new Date(rental.due_date);
       end.setHours(23, 59, 59, 999); // inclusive
       return start <= today && today <= end;
     });
+    if (inPeriod.length > 0) {
+      // If multiple, pick the one with the closest due date
+      return inPeriod.reduce((a, b) => new Date(a.due_date) < new Date(b.due_date) ? a : b, inPeriod[0]);
+    }
+    // If today is before all due dates, pick the one with the closest due date in the future and a start date before today
+    const futureRentals = rentals.filter(rental => {
+      const start = new Date(rental.created_at);
+      const due = new Date(rental.due_date);
+      return start <= today && today < due;
+    });
+    if (futureRentals.length > 0) {
+      return futureRentals.reduce((a, b) => new Date(a.due_date) < new Date(b.due_date) ? a : b, futureRentals[0]);
+    }
+    // If today is after all due dates, return null
+    return null;
   };
 
   const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
