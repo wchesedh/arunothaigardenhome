@@ -47,7 +47,6 @@ export default function Navbar() {
 
         <div className="hidden sm:flex space-x-4 items-center text-sm">
           <Link href="/dashboard" className="hover:underline">Dashboard</Link>
-          <Link href="/apartments" className="hover:underline">Apartments</Link>
           {hasMounted && (
             loggedIn ? (
               <Link href="/logout" className="hover:underline text-red-500">Logout</Link>
@@ -64,9 +63,7 @@ export default function Navbar() {
           <Link href="/dashboard" className="hover:underline" onClick={closeMenu}>
             Dashboard
           </Link>
-          <Link href="/apartments" className="hover:underline" onClick={closeMenu}>
-            Apartments
-          </Link>
+        
           {hasMounted && (
             loggedIn ? (
               <Link href="/logout" className="hover:underline text-red-500" onClick={closeMenu}>

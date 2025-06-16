@@ -201,7 +201,7 @@ export default function DashboardPage() {
                 <div className="text-orange-600 font-medium">Occupancy Rate</div>
               </div>
               <div className="text-3xl font-bold text-gray-800 mb-2">
-                {stats.occupancyRate}%
+                {stats.occupancyRate.toFixed(2)}%
               </div>
               <div className="text-sm text-gray-600">
                 Current occupancy
