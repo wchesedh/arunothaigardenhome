@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import ApartmentFormModal from '@/components/ApartmentFormModal'
 import AdminLayout from '@/components/layouts/AdminLayout'
-import { Pencil, Trash2, Eye, CheckCircle2, Users, Wrench, Clock2, AlertTriangle, Calendar } from 'lucide-react'
+import { Pencil, Trash2, Eye, CheckCircle2, Users, Wrench, Clock2, AlertTriangle, Calendar, Building2, Home } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 type Apartment = {
@@ -17,6 +17,7 @@ type Apartment = {
   payment_status: string
   next_payment_due: string
   paid_at: string | null
+  photo_url?: string
 }
 
 type ApartmentTenant = {
@@ -288,6 +289,7 @@ export default function ApartmentsPage() {
             <table className="min-w-full bg-white">
               <thead>
                 <tr className="bg-gray-50">
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Photo</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => toggleSort('name')}>
                     Name {getSortIndicator('name')}
                   </th>
@@ -319,6 +321,15 @@ export default function ApartmentsPage() {
                   const paymentStatus = getPaymentStatus(apartment.id)
                   return (
                     <tr key={apartment.id} className="border-b hover:bg-gray-50">
+                      <td className="px-4 py-2">
+                        {apartment.photo_url ? (
+                          <img src={apartment.photo_url} alt="Apartment" className="w-24 h-24 object-cover rounded" />
+                        ) : (
+                          <div className="w-24 h-24 bg-gray-100 flex items-center justify-center rounded text-gray-400">
+                            <Home className="w-20 h-20" />
+                          </div>
+                        )}
+                      </td>
                       <td className="px-4 py-2">{apartment.name}</td>
                       <td className="px-4 py-2">
                         <div 

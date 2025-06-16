@@ -1,6 +1,6 @@
 'use client'
 
-import { use, useState, useEffect } from 'react'
+import { use, useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { 
   ArrowLeft, 
@@ -35,6 +35,7 @@ import {
 } from 'lucide-react'
 import AssignTenantModal from '@/components/AssignTenantModal'
 import AddTenantToGroupModal from '@/components/AddTenantToGroupModal'
+import ApartmentFormModal from '@/components/ApartmentFormModal'
 import { supabase } from '@/lib/supabaseClient'
 
 type Apartment = {
@@ -45,6 +46,7 @@ type Apartment = {
   room_count: number
   created_at: string
   next_payment_due: string | null
+  photo_url?: string
 }
 
 type Tenant = {
@@ -90,6 +92,7 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
   const [groupToCancel, setGroupToCancel] = useState<{ id: string; date: string } | null>(null)
   const [showMoreOptions, setShowMoreOptions] = useState<string | null>(null)
   const [showEditModal, setShowEditModal] = useState(false)
+  const [showRentalEditModal, setShowRentalEditModal] = useState(false)
   const [selectedRental, setSelectedRental] = useState<ApartmentTenant | null>(null)
   const [showPaymentModal, setShowPaymentModal] = useState(false)
   const [selectedRentalForPayment, setSelectedRentalForPayment] = useState<ApartmentTenant | null>(null)
@@ -116,6 +119,8 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
   const [showCancelled, setShowCancelled] = useState(false)
   const [paymentHistoryPerPage, setPaymentHistoryPerPage] = useState(10)
   const [currentPaymentPage, setCurrentPaymentPage] = useState(1)
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const fetchApartmentTenants = async () => {
     try {
@@ -609,6 +614,38 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
     });
   };
 
+  const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    const fileExt = file.name.split('.').pop()
+    const filePath = `apartments/${apartment.id}.${fileExt}`
+
+    console.log('Uploading to:', filePath, file)
+
+    // Upload to Supabase Storage
+    let { error: uploadError } = await supabase.storage
+      .from('apartment-photos')
+      .upload(filePath, file, { upsert: true })
+
+    if (uploadError) {
+      console.error('Supabase upload error:', uploadError)
+      alert('Upload failed! ' + (uploadError.message || JSON.stringify(uploadError)))
+      setUploading(false)
+      return
+    }
+
+    // Get public URL
+    const { data } = supabase.storage.from('apartment-photos').getPublicUrl(filePath)
+    const photoUrl = data.publicUrl
+
+    // Update apartment record
+    await supabase.from('apartments').update({ photo_url: photoUrl }).eq('id', apartment.id)
+
+    setUploading(false)
+    window.location.reload()
+  }
+
   return (
     <div className="p-2 sm:p-4 md:p-6 space-y-6 max-w-full">
       {/* Header */}
@@ -660,64 +697,102 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
           <div className="space-y-6">
             {/* Basic Information */}
             <div>
-              <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                <Building2 className="w-5 h-5 text-blue-600" />
-                Basic Information
-              </h2>
-              <dl className="space-y-4">
-                {/* Name and Description */}
-                <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg">
-                  <dt className="text-sm font-medium text-blue-600 flex items-center gap-2">
-                    <Home className="w-4 h-4" />
-                    Name
-                  </dt>
-                  <dd className="mt-1 text-gray-900 font-medium break-words">{apartment.name}</dd>
-                </div>
-                <div className="bg-purple-50 border border-purple-100 p-4 rounded-lg">
-                  <dt className="text-sm font-medium text-purple-600 flex items-center gap-2">
-                    <Info className="w-4 h-4" />
-                    Description
-                  </dt>
-                  <dd className="mt-1 text-gray-900">
-                    <div 
-                      className="prose prose-sm max-w-none break-words"
-                      dangerouslySetInnerHTML={{ __html: apartment.description }}
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-blue-600" />
+                  Basic Information
+                </h2>
+                <button
+                  onClick={() => setShowEditModal(true)}
+                  className="p-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+                  title="Edit Basic Information"
+                >
+                  <Pencil className="w-5 h-5" />
+                </button>
+              </div>
+              {/* Apartment Photo Upload */}
+              <div className="mb-6">
+                {apartment.photo_url ? (
+                  <div className="relative group aspect-square max-w-md mx-auto">
+                    <img 
+                      src={apartment.photo_url} 
+                      alt="Apartment" 
+                      className="w-full h-full object-contain rounded-lg shadow-sm transition-transform duration-300 group-hover:scale-[1.02] bg-gray-50" 
                     />
-                  </dd>
+                    <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-10 transition-all duration-300 rounded-lg"></div>
+                  </div>
+                ) : (
+                  <div className="aspect-square max-w-md mx-auto bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center rounded-lg border border-gray-200">
+                    <div className="text-center">
+                      <Building2 className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                      <p className="text-gray-400 text-sm">No photo available</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Name and Description Card */}
+                <div className="col-span-2 bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-blue-50 rounded-lg">
+                      <Home className="w-5 h-5 text-blue-600" />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-medium text-gray-900 mb-1">{apartment.name}</h3>
+                      <div 
+                        className="prose prose-sm max-w-none text-gray-600"
+                        dangerouslySetInnerHTML={{ __html: apartment.description }}
+                      />
+                    </div>
+                  </div>
                 </div>
+
                 {/* Quick Stats Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className="bg-green-50 border border-green-100 p-4 rounded-lg">
-                    <dt className="text-sm font-medium text-green-600 flex items-center gap-2">
-                      <DollarSign className="w-4 h-4" />
-                      Base Price
-                    </dt>
-                    <dd className="mt-1 text-gray-900 font-medium">{apartment.base_price.toLocaleString()} THB</dd>
+                <div className="col-span-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-green-50 rounded-lg">
+                        <DollarSign className="w-5 h-5 text-green-600" />
+                      </div>
+                      <div>
+                        <div className="text-sm text-gray-500">Base Price</div>
+                        <div className="text-lg font-semibold text-gray-900">{apartment.base_price.toLocaleString()} THB</div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="bg-orange-50 border border-orange-100 p-4 rounded-lg">
-                    <dt className="text-sm font-medium text-orange-600 flex items-center gap-2">
-                      <DoorOpen className="w-4 h-4" />
-                      Rooms
-                    </dt>
-                    <dd className="mt-1 text-gray-900 font-medium">{apartment.room_count}</dd>
+
+                  <div className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-purple-50 rounded-lg">
+                        <DoorOpen className="w-5 h-5 text-purple-600" />
+                      </div>
+                      <div>
+                        <div className="text-sm text-gray-500">Rooms</div>
+                        <div className="text-lg font-semibold text-gray-900">{apartment.room_count}</div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-lg">
-                    <dt className="text-sm font-medium text-indigo-600 flex items-center gap-2">
-                      <Clock className="w-4 h-4" />
-                      Created
-                    </dt>
-                    <dd className="mt-1 text-gray-900 font-medium">
-                      {new Date(apartment.created_at).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </dd>
+
+                  <div className="bg-white rounded-lg border border-gray-200 p-4 hover:shadow-md transition-shadow">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-orange-50 rounded-lg">
+                        <Clock className="w-5 h-5 text-orange-600" />
+                      </div>
+                      <div>
+                        <div className="text-sm text-gray-500">Created</div>
+                        <div className="text-sm font-medium text-gray-900">
+                          {new Date(apartment.created_at).toLocaleDateString('en-US', {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric'
+                          })}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </dl>
+              </div>
             </div>
 
             {/* Payment History Section */}
@@ -1077,7 +1152,7 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                                             <button
                                               onClick={() => {
                                                 setSelectedRental(group)
-                                                setShowEditModal(true)
+                                                setShowRentalEditModal(true)
                                                 setShowMoreOptions(null)
                                               }}
                                               className="w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-2 transition-colors"
@@ -1386,14 +1461,14 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
       )}
 
       {/* Edit Rental Modal */}
-      {showEditModal && selectedRental && (
+      {showRentalEditModal && selectedRental && (
         <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
           <div className="bg-white rounded-lg p-6 w-[90%] max-w-md shadow-xl">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-xl font-semibold text-gray-800">Edit Rental</h2>
               <button
                 onClick={() => {
-                  setShowEditModal(false)
+                  setShowRentalEditModal(false)
                   setSelectedRental(null)
                 }}
                 className="text-gray-500 hover:text-gray-700"
@@ -1430,7 +1505,7 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
             <div className="mt-6 flex justify-end gap-3">
               <button
                 onClick={() => {
-                  setShowEditModal(false)
+                  setShowRentalEditModal(false)
                   setSelectedRental(null)
                 }}
                 className="px-4 py-2 text-gray-600 hover:underline"
@@ -1451,7 +1526,7 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
 
                     if (error) throw error
                     await fetchApartmentTenants()
-                    setShowEditModal(false)
+                    setShowRentalEditModal(false)
                     setSelectedRental(null)
                   } catch (err) {
                     console.error('Error updating rental:', err)
@@ -1760,6 +1835,18 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
             </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Basic Information Modal */}
+      {showEditModal && (
+        <ApartmentFormModal
+          apartment={apartment}
+          onClose={() => setShowEditModal(false)}
+          onSaved={() => {
+            setShowEditModal(false)
+            window.location.reload()
+          }}
+        />
       )}
     </div>
   )

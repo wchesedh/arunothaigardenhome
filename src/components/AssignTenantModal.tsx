@@ -82,13 +82,38 @@ export default function AssignTenantModal({ apartmentId, apartmentName, onClose,
 
   const fetchAvailableTenants = async () => {
     try {
-      const { data, error } = await supabase
+      // First get all active tenants
+      const { data: allTenants, error: tenantsError } = await supabase
         .from('tenants')
         .select('*')
+        .eq('status', 'active')
         .order('full_name');
 
-      if (error) throw error;
-      setAvailableTenants(data || []);
+      if (tenantsError) throw tenantsError;
+
+      // Get all active apartment assignments
+      const { data: activeAssignments, error: assignmentsError } = await supabase
+        .from('apartment_tenants')
+        .select(`
+          id,
+          members:apartment_tenant_members(
+            tenant_id
+          )
+        `)
+        .eq('status', 'active');
+
+      if (assignmentsError) throw assignmentsError;
+
+      // Create a set of tenant IDs who are already assigned
+      const assignedTenantIds = new Set(
+        activeAssignments?.flatMap(group => 
+          group.members?.map(member => member.tenant_id) || []
+        ) || []
+      );
+
+      // Filter out already assigned tenants
+      const available = allTenants?.filter(tenant => !assignedTenantIds.has(tenant.id)) || [];
+      setAvailableTenants(available);
     } catch (err) {
       console.error('Error fetching tenants:', err);
       setError('Failed to load tenants');

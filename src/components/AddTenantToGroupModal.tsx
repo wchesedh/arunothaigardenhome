@@ -36,10 +36,11 @@ export default function AddTenantToGroupModal({ groupId, apartmentId, onClose, o
       setLoading(true);
       setError(null);
       try {
-        // First, get all tenants
+        // First, get all active tenants
         const { data: allTenants, error: tenantsError } = await supabase
           .from('tenants')
           .select('*')
+          .eq('status', 'active')
           .order('full_name');
 
         if (tenantsError) {
@@ -51,8 +52,8 @@ export default function AddTenantToGroupModal({ groupId, apartmentId, onClose, o
           throw new Error('No tenants data received');
         }
 
-        // Get tenants already assigned to this apartment through apartment_tenants and apartment_tenant_members
-        const { data: assignedTenants, error: assignedError } = await supabase
+        // Get all active apartment assignments
+        const { data: activeAssignments, error: assignmentsError } = await supabase
           .from('apartment_tenants')
           .select(`
             id,
@@ -60,17 +61,16 @@ export default function AddTenantToGroupModal({ groupId, apartmentId, onClose, o
               tenant_id
             )
           `)
-          .eq('apartment_id', apartmentId)
           .eq('status', 'active');
 
-        if (assignedError) {
-          console.error('Error fetching assigned tenants:', assignedError);
-          throw new Error(`Failed to fetch assigned tenants: ${assignedError.message}`);
+        if (assignmentsError) {
+          console.error('Error fetching assigned tenants:', assignmentsError);
+          throw new Error(`Failed to fetch assigned tenants: ${assignmentsError.message}`);
         }
 
-        // Extract all tenant IDs from the active apartment tenant groups
+        // Create a set of tenant IDs who are already assigned
         const assignedTenantIds = new Set(
-          assignedTenants?.flatMap(group => 
+          activeAssignments?.flatMap(group => 
             group.members?.map(member => member.tenant_id) || []
           ) || []
         );
@@ -89,7 +89,7 @@ export default function AddTenantToGroupModal({ groupId, apartmentId, onClose, o
     };
 
     fetchTenants();
-  }, [apartmentId]);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
