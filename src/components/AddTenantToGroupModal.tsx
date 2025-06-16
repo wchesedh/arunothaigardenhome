@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-import { X, UserPlus, Search, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, UserPlus } from 'lucide-react';
 
 type Tenant = {
   id: string;
@@ -11,87 +11,113 @@ type Tenant = {
   created_at: string;
 };
 
-type Apartment = {
-  id: string;
-  name: string;
-  base_price: number;
-  description: string | null;
-  room_count: number | null;
-  created_at: string;
-  next_payment_due: string | null;
-};
-
-type Props = {
+type AddTenantToGroupModalProps = {
+  groupId: string;
   apartmentId: string;
-  apartmentName: string;
   onClose: () => void;
-  onSaved: () => void;
+  onSaved: (newTenants: { id: string; full_name: string; contact_info: string | null }[]) => void;
 };
 
-export default function AssignTenantModal({ apartmentId, apartmentName, onClose, onSaved }: Props) {
+export default function AddTenantToGroupModal({ groupId, apartmentId, onClose, onSaved }: AddTenantToGroupModalProps) {
   const [selectedTenants, setSelectedTenants] = useState<Tenant[]>([]);
-  const [availableTenants, setAvailableTenants] = useState<Tenant[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [availableTenants, setAvailableTenants] = useState<Tenant[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
   const [showNewTenantForm, setShowNewTenantForm] = useState(false);
   const [newTenant, setNewTenant] = useState<{ full_name: string; contact_info: string }>({
     full_name: '',
     contact_info: ''
   });
   const [pendingNewTenant, setPendingNewTenant] = useState<{ full_name: string; contact_info: string } | null>(null);
-  const [assignedDate, setAssignedDate] = useState('');
-  const [dueDate, setDueDate] = useState('');
-  const [price, setPrice] = useState('');
-  const [apartment, setApartment] = useState<Apartment | null>(null);
 
   useEffect(() => {
-    fetchApartmentDetails();
-    fetchAvailableTenants();
-  }, []);
+    const fetchTenants = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // First, get all tenants
+        const { data: allTenants, error: tenantsError } = await supabase
+          .from('tenants')
+          .select('*')
+          .order('full_name');
 
-  useEffect(() => {
-    // Set assigned date to today
-    const today = new Date();
-    const formattedToday = today.toISOString().split('T')[0];
-    setAssignedDate(formattedToday);
+        if (tenantsError) {
+          console.error('Error fetching all tenants:', tenantsError);
+          throw new Error(`Failed to fetch tenants: ${tenantsError.message}`);
+        }
 
-    // Set due date to same day next month
-    const nextMonth = new Date(today);
-    nextMonth.setMonth(nextMonth.getMonth() + 1);
-    const formattedNextMonth = nextMonth.toISOString().split('T')[0];
-    setDueDate(formattedNextMonth);
-  }, []);
+        if (!allTenants) {
+          throw new Error('No tenants data received');
+        }
 
-  const fetchApartmentDetails = async () => {
+        // Get tenants already assigned to this apartment through apartment_tenants and apartment_tenant_members
+        const { data: assignedTenants, error: assignedError } = await supabase
+          .from('apartment_tenants')
+          .select(`
+            id,
+            members:apartment_tenant_members(
+              tenant_id
+            )
+          `)
+          .eq('apartment_id', apartmentId)
+          .eq('status', 'active');
+
+        if (assignedError) {
+          console.error('Error fetching assigned tenants:', assignedError);
+          throw new Error(`Failed to fetch assigned tenants: ${assignedError.message}`);
+        }
+
+        // Extract all tenant IDs from the active apartment tenant groups
+        const assignedTenantIds = new Set(
+          assignedTenants?.flatMap(group => 
+            group.members?.map(member => member.tenant_id) || []
+          ) || []
+        );
+
+        // Filter out already assigned tenants
+        const available = allTenants.filter(tenant => !assignedTenantIds.has(tenant.id));
+        
+        setAvailableTenants(available);
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
+        console.error('Error in fetchTenants:', err);
+        setError(`Failed to load tenants: ${errorMessage}`);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTenants();
+  }, [apartmentId]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
     try {
-      const { data, error } = await supabase
-        .from('apartments')
-        .select('*')
-        .eq('id', apartmentId)
-        .single();
+      // Add all selected tenants as members
+      const memberPromises = selectedTenants.map(tenant =>
+        supabase
+          .from('apartment_tenant_members')
+          .insert({
+            apartment_tenant_id: groupId,
+            tenant_id: tenant.id,
+            added_at: new Date().toISOString()
+          })
+      );
 
-      if (error) throw error;
-      setApartment(data);
-      setPrice(data.base_price.toString());
+      await Promise.all(memberPromises);
+      onSaved(selectedTenants.map(tenant => ({
+        id: tenant.id,
+        full_name: tenant.full_name,
+        contact_info: tenant.contact_info
+      })));
+      onClose();
     } catch (err) {
-      console.error('Error fetching apartment details:', err);
-      setError('Failed to load apartment details');
-    }
-  };
-
-  const fetchAvailableTenants = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('tenants')
-        .select('*')
-        .order('full_name');
-
-      if (error) throw error;
-      setAvailableTenants(data || []);
-    } catch (err) {
-      console.error('Error fetching tenants:', err);
-      setError('Failed to load tenants');
+      console.error('Error adding tenants to group:', err);
+      setError('Failed to add tenants to group. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -128,11 +154,6 @@ export default function AssignTenantModal({ apartmentId, apartmentName, onClose,
       return
     }
 
-    if (!price || !assignedDate || !dueDate) {
-      alert('Please fill in all required fields')
-      return
-    }
-
     try {
       setLoading(true)
 
@@ -157,64 +178,54 @@ export default function AssignTenantModal({ apartmentId, apartmentName, onClose,
         })
       )
 
-      // Create the rental group
-      const { data: group, error: groupError } = await supabase
-        .from('apartment_tenants')
-        .insert([{
-          apartment_id: apartmentId,
-          assigned_date: assignedDate,
-          due_date: dueDate,
-          price: price,
-          payment_status: 'unpaid',
-          status: 'active'
-        }])
-        .select()
-        .single()
-
-      if (groupError) throw groupError
-
       // Add all tenants to the group
       const { error: membersError } = await supabase
         .from('apartment_tenant_members')
         .insert(
           tenantIds.map(tenantId => ({
-            apartment_tenant_id: group.id,
+            apartment_tenant_id: groupId,
             tenant_id: tenantId
           }))
         )
 
       if (membersError) throw membersError
 
-      onSaved()
+      onSaved(selectedTenants.map(tenant => ({
+        id: tenant.id,
+        full_name: tenant.full_name,
+        contact_info: tenant.contact_info
+      })));
     } catch (err) {
-      console.error('Error creating rental:', err)
-      alert('Error creating rental. Please try again.')
+      console.error('Error adding tenants:', err)
+      alert('Error adding tenants. Please try again.')
     } finally {
       setLoading(false)
     }
   }
 
-  const filteredTenants = availableTenants.filter(tenant =>
-    tenant.full_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (tenant.contact_info && tenant.contact_info.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
-
-  const addTenant = (tenant: Tenant) => {
-    if (!selectedTenants.find(t => t.id === tenant.id)) {
+  const addTenantToSelection = (tenant: Tenant) => {
+    if (!selectedTenants.some(t => t.id === tenant.id)) {
       setSelectedTenants(prev => [...prev, tenant]);
     }
   };
 
-  const removeTenant = (tenantId: string) => {
+  const removeTenantFromSelection = (tenantId: string) => {
     setSelectedTenants(prev => prev.filter(t => t.id !== tenantId));
   };
+
+  const filteredTenants = availableTenants.filter(tenant =>
+    tenant.full_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
       <div className="bg-white rounded-lg p-6 w-[90%] max-w-2xl shadow-xl">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-semibold">Create Rental for {apartmentName}</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
+          <h2 className="text-xl font-semibold text-gray-800">Add Tenants to Rental Group</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+          >
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -226,44 +237,6 @@ export default function AssignTenantModal({ apartmentId, apartmentName, onClose,
         )}
 
         <div className="space-y-6">
-          {/* Date and Price Fields */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Start Date
-              </label>
-              <input
-                type="date"
-                value={assignedDate}
-                onChange={(e) => setAssignedDate(e.target.value)}
-                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Due Date
-              </label>
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Monthly Price (THB)
-              </label>
-              <input
-                type="number"
-                value={price}
-                onChange={(e) => setPrice(e.target.value)}
-                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="Enter price"
-              />
-            </div>
-          </div>
-
           {/* Tenant Selection */}
           <div>
             <div className="flex justify-between items-center mb-4">
@@ -329,7 +302,7 @@ export default function AssignTenantModal({ apartmentId, apartmentName, onClose,
                 value=""
                 onChange={(e) => {
                   const tenant = availableTenants.find(t => t.id === e.target.value)
-                  if (tenant) addTenant(tenant)
+                  if (tenant) addTenantToSelection(tenant)
                 }}
                 className="w-full px-4 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
@@ -360,7 +333,7 @@ export default function AssignTenantModal({ apartmentId, apartmentName, onClose,
                       )}
                     </div>
                     <button
-                      onClick={() => removeTenant(tenant.id)}
+                      onClick={() => removeTenantFromSelection(tenant.id)}
                       className="text-red-600 hover:text-red-800"
                     >
                       <Trash2 className="w-4 h-4" />
@@ -370,24 +343,24 @@ export default function AssignTenantModal({ apartmentId, apartmentName, onClose,
               </div>
             </div>
           )}
+        </div>
 
-          {/* Action Buttons */}
-          <div className="flex justify-end gap-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-gray-600 hover:underline"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              Create Rental
-            </button>
-          </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 hover:underline"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+            disabled={loading || selectedTenants.length === 0}
+          >
+            {loading ? 'Adding...' : 'Add Tenants'}
+          </button>
         </div>
       </div>
     </div>
   );
-}
+} 

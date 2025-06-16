@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import ApartmentFormModal from '@/components/ApartmentFormModal'
 import AdminLayout from '@/components/layouts/AdminLayout'
-import { Pencil, Trash2, Eye } from 'lucide-react'
+import { Pencil, Trash2, Eye, CheckCircle2, Users, Wrench, Clock2, AlertTriangle, Calendar } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 type Apartment = {
@@ -14,11 +14,15 @@ type Apartment = {
   base_price: number
   room_count: number
   created_at: string
+  payment_status: string
+  next_payment_due: string
+  paid_at: string | null
 }
 
 export default function ApartmentsPage() {
   const router = useRouter()
   const [apartments, setApartments] = useState<Apartment[]>([])
+  const [apartmentTenants, setApartmentTenants] = useState<{[key: string]: any[]}>({})
   const [search, setSearch] = useState('')
   const [perPage, setPerPage] = useState(10)
   const [currentPage, setCurrentPage] = useState(1)
@@ -34,13 +38,36 @@ export default function ApartmentsPage() {
       .from('apartments')
       .select('*')
 
-    if (!error && data) setApartments(data)
-    else console.error('Error fetching apartments:', error)
+    if (!error && data) {
+      setApartments(data)
+      // Fetch tenants for each apartment
+      data.forEach(apartment => fetchApartmentTenants(apartment.id))
+    } else console.error('Error fetching apartments:', error)
+  }
+
+  const fetchApartmentTenants = async (apartmentId: string) => {
+    const { data, error } = await supabase
+      .from('apartment_tenants')
+      .select('*')
+      .eq('apartment_id', apartmentId)
+      .eq('status', 'active')
+
+    if (!error && data) {
+      setApartmentTenants(prev => ({
+        ...prev,
+        [apartmentId]: data
+      }))
+    }
   }
 
   useEffect(() => {
     fetchApartments()
   }, [])
+
+  const getApartmentStatus = (apartmentId: string) => {
+    const tenants = apartmentTenants[apartmentId] || []
+    return tenants.length > 0 ? 'occupied' : 'available'
+  }
 
   const sorted = [...apartments].sort((a, b) => {
     const fieldA = a[sortBy]
@@ -101,6 +128,56 @@ export default function ApartmentsPage() {
 
   const handleViewDetails = (apartmentId: string) => {
     router.push(`/apartments/${apartmentId}`)
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'available':
+        return 'bg-green-100 text-green-800'
+      case 'occupied':
+        return 'bg-blue-100 text-blue-800'
+      default:
+        return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'available':
+        return <CheckCircle2 className="w-4 h-4" />
+      case 'occupied':
+        return <Users className="w-4 h-4" />
+      case 'maintenance':
+        return <Wrench className="w-4 h-4" />
+      default:
+        return <Clock2 className="w-4 h-4" />
+    }
+  }
+
+  const getPaymentStatusColor = (status: string) => {
+    switch (status) {
+      case 'paid':
+        return 'bg-green-100 text-green-800'
+      case 'unpaid':
+        return 'bg-red-100 text-red-800'
+      case 'late':
+        return 'bg-yellow-100 text-yellow-800'
+      default:
+        return 'bg-gray-100 text-gray-800'
+    }
+  }
+
+  const getPaymentStatus = (apartment: Apartment) => {
+    if (!apartment.next_payment_due) return null
+
+    const today = new Date()
+    const dueDate = new Date(apartment.next_payment_due)
+    const isLate = today > dueDate && apartment.payment_status !== 'paid'
+
+    return {
+      status: apartment.payment_status === 'paid' ? 'paid' : 'unpaid',
+      isLate: isLate || apartment.payment_status === 'late'
+    }
   }
 
   return (
@@ -172,47 +249,99 @@ export default function ApartmentsPage() {
                   <th className="text-left px-4 py-2 cursor-pointer" onClick={() => toggleSort('room_count')}>
                     Rooms{getSortIndicator('room_count')}
                   </th>
-                  <th className="text-left px-4 py-2">Actions</th>
+                  <th className="text-left px-4 py-2">
+                    Status
+                  </th>
+                  <th className="text-left px-4 py-2">
+                    Payment
+                  </th>
+                  <th className="text-left px-4 py-2">
+                    Due Date
+                  </th>
+                  <th className="text-left px-4 py-2">
+                    Actions
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {paginated.map((apt) => (
-                  <tr key={apt.id} className="border-t hover:bg-gray-50">
-                    <td className="px-4 py-2">{apt.name}</td>
-                    <td className="px-4 py-2 text-gray-600">{apt.description}</td>
-                    <td className="px-4 py-2">{apt.base_price.toLocaleString()} THB</td>
-                    <td className="px-4 py-2">{apt.room_count}</td>
-                    <td className="px-4 py-2 space-x-2">
-                      <button
-                        className="text-green-600 hover:text-green-800"
-                        title="View Details"
-                        onClick={() => handleViewDetails(apt.id)}
-                      >
-                        <Eye className="w-5 h-5" />
-                      </button>
-                      <button
-                        className="text-blue-600 hover:text-blue-800"
-                        title="Edit"
-                        onClick={() => {
-                          setSelectedApartment(apt)
-                          setModalOpen(true)
-                        }}
-                      >
-                        <Pencil className="w-5 h-5" />
-                      </button>
-                      <button
-                        className="text-red-600 hover:text-red-800"
-                        title="Delete"
-                        onClick={() => {
-                          setApartmentToDelete(apt)
-                          setShowDeleteConfirm(true)
-                        }}
-                      >
-                        <Trash2 className="w-6 h-6" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {paginated.map((apartment) => {
+                  const paymentStatus = getPaymentStatus(apartment)
+                  return (
+                    <tr key={apartment.id} className="border-b hover:bg-gray-50">
+                      <td className="px-4 py-2">{apartment.name}</td>
+                      <td className="px-4 py-2">
+                        <div 
+                          className="prose prose-sm max-w-none"
+                          dangerouslySetInnerHTML={{ __html: apartment.description }}
+                        />
+                      </td>
+                      <td className="px-4 py-2">{apartment.base_price.toLocaleString()} THB</td>
+                      <td className="px-4 py-2">{apartment.room_count}</td>
+                      <td className="px-4 py-2">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(getApartmentStatus(apartment.id))}`}>
+                          {getApartmentStatus(apartment.id).toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2">
+                        {paymentStatus ? (
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPaymentStatusColor(paymentStatus.status)}`}>
+                              {paymentStatus.status.toUpperCase()}
+                            </span>
+                            {paymentStatus.isLate && (
+                              <span className="text-xs text-yellow-600 font-medium">
+                                Overdue
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-gray-500 text-xs">No active rental</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2">
+                        {apartment.next_payment_due ? (
+                          <div className="text-xs text-gray-800">
+                            {new Date(apartment.next_payment_due).toLocaleDateString('en-US', {
+                              year: 'numeric',
+                              month: 'long',
+                              day: 'numeric'
+                            })}
+                          </div>
+                        ) : (
+                          <span className="text-gray-500 text-xs">-</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2">
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleViewDetails(apartment.id)}
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setSelectedApartment(apartment)
+                              setModalOpen(true)
+                            }}
+                            className="text-blue-600 hover:text-blue-800"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => {
+                              setApartmentToDelete(apartment)
+                              setShowDeleteConfirm(true)
+                            }}
+                            className="text-red-600 hover:text-red-800"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>

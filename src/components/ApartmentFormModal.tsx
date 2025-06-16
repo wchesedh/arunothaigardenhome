@@ -2,193 +2,207 @@
 
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabaseClient';
-
+import { useEditor, EditorContent } from '@tiptap/react';
+import StarterKit from '@tiptap/starter-kit';
+import { X } from 'lucide-react';
 
 type Apartment = {
-  id?: string;
+  id: string;
   name: string;
+  description: string;
   base_price: number;
   room_count: number;
-  description?: string;
+  created_at: string;
 };
 
-export default function ApartmentFormModal({
-  apartment,
-  onClose,
-  onSaved,
-}: {
-  apartment: Apartment | null;
+type Props = {
+  apartment?: Apartment | null;
   onClose: () => void;
   onSaved: () => void;
-}) {
-  const [form, setForm] = useState<Apartment>({
-    name: '',
-    base_price: 0,
-    room_count: 1,
-    description: '',
+};
+
+export default function ApartmentFormModal({ apartment, onClose, onSaved }: Props) {
+  const [name, setName] = useState('');
+  const [basePrice, setBasePrice] = useState('');
+  const [roomCount, setRoomCount] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const editor = useEditor({
+    extensions: [StarterKit],
+    content: apartment?.description || '',
+    editorProps: {
+      attributes: {
+        class: 'prose prose-sm focus:outline-none min-h-[100px] max-w-none',
+      },
+    },
   });
 
-  const [errors, setErrors] = useState<{ [key: string]: string }>({});
-  const [showConfirm, setShowConfirm] = useState(false);
-
   useEffect(() => {
-    if (apartment) setForm(apartment);
-  }, [apartment]);
-
-  const validate = () => {
-    const errs: { [key: string]: string } = {};
-    if (!form.name) errs.name = 'Name is required.';
-    if (form.base_price <= 0) errs.base_price = 'Price must be greater than 0.';
-    if (form.room_count <= 0) errs.room_count = 'Rooms must be at least 1.';
-    return errs;
-  };
-
-  const handleSubmit = async () => {
-    const errs = validate();
-    if (Object.keys(errs).length > 0) {
-      setErrors(errs);
-      return;
-    }
-
-    const payload = {
-      name: form.name,
-      base_price: form.base_price,
-      room_count: form.room_count,
-      description: form.description,
-    };
-
     if (apartment) {
-      await supabase.from('apartments').update(payload).eq('id', apartment.id);
-    } else {
-      await supabase.from('apartments').insert([payload]);
+      setName(apartment.name);
+      setBasePrice(apartment.base_price.toString());
+      setRoomCount(apartment.room_count.toString());
+      editor?.commands.setContent(apartment.description);
     }
+  }, [apartment, editor]);
 
-    onSaved();
-    onClose();
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    try {
+      const data = {
+        name,
+        description: editor?.getHTML() || '',
+        base_price: parseFloat(basePrice),
+        room_count: parseInt(roomCount),
+      };
+
+      if (apartment) {
+        const { error } = await supabase
+          .from('apartments')
+          .update(data)
+          .eq('id', apartment.id);
+
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('apartments')
+          .insert(data);
+
+        if (error) throw error;
+      }
+
+      onSaved();
+    } catch (err) {
+      console.error('Error saving apartment:', err);
+      setError('Error saving apartment. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
-
-  const showError = (field: keyof Apartment) =>
-    errors[field] ? <p className="text-sm text-red-600">{errors[field]}</p> : null;
 
   return (
-    <>
-      {/* Backdrop */}
-      <div className="fixed inset-0 bg-black bg-opacity-40 z-40" onClick={onClose} />
-      
-      {/* Modal */}
-      <div className="fixed top-1/2 left-1/2 bg-white z-50 p-6 rounded shadow-xl w-[90%] max-w-md -translate-x-1/2 -translate-y-1/2">
-        <h2 className="text-xl font-bold mb-4 text-blue-700">
-          {apartment ? 'Edit Apartment' : 'Create Apartment'}
-        </h2>
+    <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
+      <div className="bg-white rounded-lg p-6 w-[90%] max-w-2xl shadow-xl">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-xl font-semibold text-gray-800">
+            {apartment ? 'Edit Apartment' : 'Create Apartment'}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-        {/* Form */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const errs = validate();
-            if (Object.keys(errs).length > 0) {
-              setErrors(errs);
-              return;
-            }
-            setShowConfirm(true);
-          }}
-          className="space-y-4"
-        >
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="text-sm font-medium">Name</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Name
+            </label>
             <input
               type="text"
-              className="w-full p-2 border rounded"
-              value={form.name}
-              onChange={(e) => {
-                setForm({ ...form, name: e.target.value });
-                if (errors.name) setErrors({ ...errors, name: '' });
-              }}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
             />
-            {showError('name')}
           </div>
 
           <div>
-            <label className="text-sm font-medium">Base Price</label>
-            <input
-              type="number"
-              className="w-full p-2 border rounded"
-              value={form.base_price}
-              onChange={(e) => {
-                const val = parseFloat(e.target.value);
-                setForm({ ...form, base_price: isNaN(val) ? 0 : val });
-                if (errors.base_price) setErrors({ ...errors, base_price: '' });
-              }}
-            />
-            {showError('base_price')}
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
+            <div className="border rounded-lg focus-within:ring-2 focus-within:ring-blue-500">
+              <div className="border-b p-2 bg-gray-50 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleBold().run()}
+                  className={`p-1 rounded ${editor?.isActive('bold') ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
+                >
+                  <strong>B</strong>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleItalic().run()}
+                  className={`p-1 rounded ${editor?.isActive('italic') ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
+                >
+                  <em>I</em>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleBulletList().run()}
+                  className={`p-1 rounded ${editor?.isActive('bulletList') ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
+                >
+                  • List
+                </button>
+                <button
+                  type="button"
+                  onClick={() => editor?.chain().focus().toggleOrderedList().run()}
+                  className={`p-1 rounded ${editor?.isActive('orderedList') ? 'bg-gray-200' : 'hover:bg-gray-100'}`}
+                >
+                  1. List
+                </button>
+              </div>
+              <EditorContent editor={editor} className="p-3" />
+            </div>
           </div>
 
-          <div>
-            <label className="text-sm font-medium">Room Count</label>
-            <input
-              type="number"
-              className="w-full p-2 border rounded"
-              value={form.room_count}
-              onChange={(e) => {
-                const val = parseInt(e.target.value);
-                setForm({ ...form, room_count: isNaN(val) ? 1 : val });
-                if (errors.room_count) setErrors({ ...errors, room_count: '' });
-              }}
-            />
-            {showError('room_count')}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Base Price (THB)
+              </label>
+              <input
+                type="number"
+                value={basePrice}
+                onChange={(e) => setBasePrice(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+                min="0"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Number of Rooms
+              </label>
+              <input
+                type="number"
+                value={roomCount}
+                onChange={(e) => setRoomCount(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                required
+                min="1"
+              />
+            </div>
           </div>
 
-          <div>
-            <label className="text-sm font-medium">Description</label>
-            <textarea
-              className="w-full p-2 border rounded"
-              value={form.description}
-              onChange={(e) => setForm({ ...form, description: e.target.value })}
-            />
-          </div>
+          {error && (
+            <div className="text-red-600 text-sm">{error}</div>
+          )}
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" onClick={onClose} className="text-gray-600 hover:underline">
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-600 hover:underline"
+            >
               Cancel
             </button>
             <button
               type="submit"
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+              disabled={loading}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
             >
-              {apartment ? 'Update' : 'Create'}
+              {loading ? 'Saving...' : apartment ? 'Save Changes' : 'Create Apartment'}
             </button>
           </div>
         </form>
       </div>
-
-      {/* Confirm Modal */}
-      {showConfirm && (
-        <>
-          <div className="fixed inset-0 bg-black bg-opacity-30 z-50" />
-          <div className="fixed top-1/2 left-1/2 z-50 bg-white p-6 rounded shadow-xl max-w-sm w-[90%] -translate-x-1/2 -translate-y-1/2">
-            <h3 className="text-lg font-semibold mb-4 text-gray-800">
-              {apartment ? 'Confirm Update' : 'Confirm Creation'}
-            </h3>
-            <p className="text-gray-600 mb-4">
-              Are you sure you want to {apartment ? 'update' : 'create'} this apartment?
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowConfirm(false)}
-                className="text-gray-600 hover:underline"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
-              >
-                Confirm
-              </button>
-            </div>
-          </div>
-        </>
-      )}
-    </>
+    </div>
   );
 }
