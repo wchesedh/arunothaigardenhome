@@ -30,7 +30,8 @@ import {
   Download,
   Upload,
   CheckCircle2,
-  Clock2
+  Clock2,
+  User
 } from 'lucide-react'
 import AssignTenantModal from '@/components/AssignTenantModal'
 import AddTenantToGroupModal from '@/components/AddTenantToGroupModal'
@@ -113,6 +114,8 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
   const [currentRentalPage, setCurrentRentalPage] = useState(1)
   const [rentalFilter, setRentalFilter] = useState<'all' | 'active' | 'completed' | 'cancelled'>('all')
   const [showCancelled, setShowCancelled] = useState(false)
+  const [paymentHistoryPerPage, setPaymentHistoryPerPage] = useState(10)
+  const [currentPaymentPage, setCurrentPaymentPage] = useState(1)
 
   const fetchApartmentTenants = async () => {
     try {
@@ -124,7 +127,8 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
             id,
             added_at,
             tenant:tenants(*)
-          )
+          ),
+          previous_rental:apartment_tenants!previous_rental_id(*)
         `)
         .eq('apartment_id', apartment.id)
         .order('created_at', { ascending: false })
@@ -138,7 +142,6 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
       setHasExistingGroup(data && data.length > 0)
     } catch (err) {
       console.error('Error in fetchApartmentTenants:', err)
-      // Show error to user
       alert('Failed to load apartment data. Please try refreshing the page.')
     } finally {
       setLoading(false)
@@ -465,7 +468,6 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
         .from('apartment_tenants')
         .update({ 
           payment_status: isLate ? 'late' : 'paid',
-          status: 'completed',
           paid_at: today.toISOString()
         })
         .eq('id', selectedRentalForPayment.id)
@@ -473,6 +475,7 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
       if (paymentError) throw paymentError
 
       if (renewRental) {
+        // Create a new rental record for the next month
         const { data: newRental, error: newRentalError } = await supabase
           .from('apartment_tenants')
           .insert({
@@ -481,7 +484,8 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
             due_date: nextDueDate,
             price: selectedRentalForPayment.price,
             payment_status: 'unpaid',
-            status: 'active'
+            status: 'active',
+            previous_rental_id: selectedRentalForPayment.id // Add reference to previous rental
           })
           .select()
           .single()
@@ -594,60 +598,81 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
     }
   };
 
+  // Find the current rental group (today between created_at/assigned_date and due_date)
+  const getCurrentRental = (rentals: ApartmentTenant[]) => {
+    const today = new Date();
+    return rentals.find(rental => {
+      const start = new Date(rental.created_at); // or rental.assigned_date
+      const end = new Date(rental.due_date);
+      end.setHours(23, 59, 59, 999); // inclusive
+      return start <= today && today <= end;
+    });
+  };
+
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-2 sm:p-4 md:p-6 space-y-6 max-w-full">
       {/* Header */}
-      <div className="bg-white rounded shadow p-6">
+      <div className="bg-white rounded shadow p-4 sm:p-6">
         <button
           onClick={() => router.back()}
-          className="text-blue-600 hover:text-blue-800 flex items-center gap-2 mb-4"
+          className="text-blue-600 hover:text-blue-800 flex items-center gap-2 mb-4 text-sm sm:text-base"
         >
           <ArrowLeft className="w-4 h-4" />
           Back to Apartments
         </button>
-        <div className="flex justify-between items-start">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-gray-800">{apartment.name}</h1>
-            <p className="text-gray-500 text-sm">Apartment Details</p>
+            <h1 className="text-xl sm:text-2xl font-bold text-gray-800">{apartment.name}</h1>
+            <p className="text-gray-500 text-xs sm:text-sm">Apartment Details</p>
           </div>
-          <div className="flex items-center gap-4">
-            <div className={`px-4 py-2 rounded-lg flex items-center gap-2 ${getStatusColor(getApartmentStatus())}`}>
-              {getStatusIcon(getApartmentStatus())}
-              <span className="capitalize">{getApartmentStatus()}</span>
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 w-full sm:w-auto">
+            <div className="flex items-center gap-3 w-full sm:w-auto">
+              <div className={`px-4 py-2.5 rounded-lg flex items-center gap-2.5 border shadow-sm ${getStatusColor(getApartmentStatus())} w-full sm:w-auto`}>
+                <div className="p-1.5 bg-white/50 rounded-lg">
+                  {getStatusIcon(getApartmentStatus())}
+                </div>
+                <div className={`font-semibold capitalize text-base ${
+                  getApartmentStatus() === 'occupied' ? 'text-blue-700' :
+                  getApartmentStatus() === 'available' ? 'text-green-700' :
+                  'text-gray-700'
+                }`}>
+                  {getApartmentStatus()}
+                </div>
+              </div>
+              {!hasActiveRental && (
+                <button
+                  onClick={() => setShowAssignModal(true)}
+                  className="bg-blue-600 text-white px-4 py-2.5 rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors shadow-sm hover:shadow w-full sm:w-auto text-sm"
+                >
+                  <Users className="w-4 h-4" />
+                  Create Rental
+                </button>
+              )}
             </div>
-            {!hasActiveRental && (
-          <button
-            onClick={() => setShowAssignModal(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 flex items-center gap-2"
-          >
-            <Users className="w-4 h-4" />
-                Create Rental
-          </button>
-            )}
           </div>
         </div>
       </div>
 
       {/* Details Card */}
-      <div className="bg-white rounded shadow p-6 space-y-6">
+      <div className="bg-white rounded shadow p-4 sm:p-6 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Left Column - Basic Info and Payment History */}
           <div className="space-y-6">
             {/* Basic Information */}
-          <div>
+            <div>
               <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
                 <Building2 className="w-5 h-5 text-blue-600" />
                 Basic Information
               </h2>
-            <dl className="space-y-4">
+              <dl className="space-y-4">
                 {/* Name and Description */}
                 <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg">
                   <dt className="text-sm font-medium text-blue-600 flex items-center gap-2">
                     <Home className="w-4 h-4" />
                     Name
                   </dt>
-                  <dd className="mt-1 text-gray-900 font-medium">{apartment.name}</dd>
-              </div>
+                  <dd className="mt-1 text-gray-900 font-medium break-words">{apartment.name}</dd>
+                </div>
                 <div className="bg-purple-50 border border-purple-100 p-4 rounded-lg">
                   <dt className="text-sm font-medium text-purple-600 flex items-center gap-2">
                     <Info className="w-4 h-4" />
@@ -655,28 +680,27 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                   </dt>
                   <dd className="mt-1 text-gray-900">
                     <div 
-                      className="prose prose-sm max-w-none"
+                      className="prose prose-sm max-w-none break-words"
                       dangerouslySetInnerHTML={{ __html: apartment.description }}
                     />
                   </dd>
-              </div>
-
+                </div>
                 {/* Quick Stats Grid */}
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="bg-green-50 border border-green-100 p-4 rounded-lg">
                     <dt className="text-sm font-medium text-green-600 flex items-center gap-2">
                       <DollarSign className="w-4 h-4" />
                       Base Price
                     </dt>
                     <dd className="mt-1 text-gray-900 font-medium">{apartment.base_price.toLocaleString()} THB</dd>
-              </div>
+                  </div>
                   <div className="bg-orange-50 border border-orange-100 p-4 rounded-lg">
                     <dt className="text-sm font-medium text-orange-600 flex items-center gap-2">
                       <DoorOpen className="w-4 h-4" />
                       Rooms
                     </dt>
                     <dd className="mt-1 text-gray-900 font-medium">{apartment.room_count}</dd>
-              </div>
+                  </div>
                   <div className="bg-indigo-50 border border-indigo-100 p-4 rounded-lg">
                     <dt className="text-sm font-medium text-indigo-600 flex items-center gap-2">
                       <Clock className="w-4 h-4" />
@@ -690,41 +714,67 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                         hour: '2-digit',
                         minute: '2-digit'
                       })}
-                </dd>
+                    </dd>
                   </div>
-              </div>
-            </dl>
-          </div>
+                </div>
+              </dl>
+            </div>
 
             {/* Payment History Section */}
-          <div>
-            <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                  <BarChart className="w-5 h-5 text-blue-600" />
-                  Payment History
-                </h2>
+            <div>
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-blue-50 rounded-lg">
+                    <BarChart className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-semibold text-gray-800">Payment History</h2>
+                  </div>
+                </div>
+                <select
+                  value={paymentHistoryPerPage}
+                  onChange={(e) => {
+                    setPaymentHistoryPerPage(Number(e.target.value))
+                    setCurrentPaymentPage(1)
+                  }}
+                  className="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto"
+                >
+                  <option value="10">10 per page</option>
+                  <option value="20">20 per page</option>
+                  <option value="50">50 per page</option>
+                </select>
               </div>
 
               {/* Payment Summary */}
-              <div className="grid grid-cols-2 gap-4 mb-6">
-                <div className="bg-white border rounded-lg p-4">
-                  <div className="text-sm text-gray-500 mb-1">Total Payments Received</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+                <div className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="p-1.5 bg-green-50 rounded-lg">
+                      <DollarSign className="w-4 h-4 text-green-600" />
+                    </div>
+                    <div className="text-sm text-gray-500">Total Payments Received</div>
+                  </div>
                   <div className="text-2xl font-semibold text-green-600">
                     {paymentHistory.reduce((sum, payment) => sum + payment.price, 0).toLocaleString()} THB
                   </div>
-                  <div className="text-sm text-gray-500 mt-1">
+                  <div className="text-sm text-gray-500 mt-2">
                     {paymentHistory.length} payment{paymentHistory.length !== 1 ? 's' : ''} received
                   </div>
                 </div>
-                <div className="bg-white border rounded-lg p-4">
-                  <div className="text-sm text-gray-500 mb-1">Expected Payments</div>
+                <div className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow">
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="p-1.5 bg-blue-50 rounded-lg">
+                      <Calendar className="w-4 h-4 text-blue-600" />
+                    </div>
+                    <div className="text-sm text-gray-500">Expected Payments</div>
+                  </div>
                   <div className="text-2xl font-semibold text-blue-600">
                     {apartmentTenants
                       .filter(group => group.status === 'active')
                       .reduce((sum, group) => sum + group.price, 0)
                       .toLocaleString()} THB
                   </div>
-                  <div className="text-sm text-gray-500 mt-1">
+                  <div className="text-sm text-gray-500 mt-2">
                     {apartmentTenants.filter(group => group.status === 'active').length} active rental{apartmentTenants.filter(group => group.status === 'active').length !== 1 ? 's' : ''}
                   </div>
                 </div>
@@ -732,33 +782,81 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
 
               <div className="space-y-4">
                 {loadingPayments ? (
-                  <div className="text-center py-4">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                  <div className="text-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                    <p className="text-gray-500">Loading payment history...</p>
                   </div>
                 ) : paymentHistory.length === 0 ? (
-                  <div className="text-center py-4 text-gray-500">
-                    No payment history available
+                  <div className="text-center py-8 bg-white rounded-lg border border-gray-100">
+                    <BarChart className="w-12 h-12 text-gray-300 mx-auto mb-2" />
+                    <p className="text-gray-500">No payment history available</p>
                   </div>
                 ) : (
-                  <div className="space-y-3">
-                    {paymentHistory.map((payment) => (
-                      <div key={payment.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <div className="font-medium">
-                              {payment.members.map((m: any) => m.tenant.full_name).join(', ')}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              Paid on {new Date(payment.paid_at).toLocaleDateString()}
+                  <>
+                    <div className="space-y-3">
+                      {paymentHistory
+                        .slice(
+                          (currentPaymentPage - 1) * paymentHistoryPerPage,
+                          currentPaymentPage * paymentHistoryPerPage
+                        )
+                        .map((payment) => (
+                          <div key={payment.id} className="bg-white border rounded-lg p-4 hover:shadow-md transition-shadow overflow-x-auto">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <div className="p-1.5 bg-blue-50 rounded-lg">
+                                    <Users className="w-4 h-4 text-blue-600" />
+                                  </div>
+                                  <div className="font-medium text-gray-900">
+                                    {payment.members.map((m: any) => m.tenant.full_name).join(', ')}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2 text-sm text-gray-500">
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  Paid on {new Date(payment.paid_at).toLocaleDateString()}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <div className="text-lg font-semibold text-green-600">
+                                  {payment.price.toLocaleString()} THB
+                                </div>
+                                <div className="p-1.5 bg-green-50 rounded-lg">
+                                  <CheckCircle className="w-4 h-4 text-green-600" />
+                                </div>
+                              </div>
                             </div>
                           </div>
-                          <div className="text-lg font-semibold text-green-600">
-                            {payment.price.toLocaleString()} THB
+                        ))}
+                    </div>
+
+                    {/* Payment History Pagination */}
+                    {Math.ceil(paymentHistory.length / paymentHistoryPerPage) > 1 && (
+                      <div className="mt-6 flex flex-col sm:flex-row items-center justify-between gap-2">
+                        <div className="text-sm text-gray-500">
+                          Showing {((currentPaymentPage - 1) * paymentHistoryPerPage) + 1} to {Math.min(currentPaymentPage * paymentHistoryPerPage, paymentHistory.length)} of {paymentHistory.length} payments
+                        </div>
+                        <div className="flex items-center gap-2 w-full sm:w-auto">
+                          <button
+                            onClick={() => setCurrentPaymentPage(prev => Math.max(prev - 1, 1))}
+                            disabled={currentPaymentPage === 1}
+                            className="px-3 py-1 border rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 w-full sm:w-auto"
+                          >
+                            Previous
+                          </button>
+                          <div className="text-sm text-gray-600">
+                            Page {currentPaymentPage} of {Math.ceil(paymentHistory.length / paymentHistoryPerPage)}
                           </div>
+                          <button
+                            onClick={() => setCurrentPaymentPage(prev => Math.min(prev + 1, Math.ceil(paymentHistory.length / paymentHistoryPerPage)))}
+                            disabled={currentPaymentPage === Math.ceil(paymentHistory.length / paymentHistoryPerPage)}
+                            className="px-3 py-1 border rounded-lg text-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 w-full sm:w-auto"
+                          >
+                            Next
+                          </button>
                         </div>
                       </div>
-                    ))}
-                  </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -766,19 +864,19 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
 
           {/* Right Column - Rental Groups */}
           <div>
-            <div className="flex justify-between items-center mb-4">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
               <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
                 <Users className="w-5 h-5 text-blue-600" />
                 Rental Groups
               </h2>
-              <div className="flex items-center gap-4">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
                 <select
                   value={rentalFilter}
                   onChange={(e) => {
                     setRentalFilter(e.target.value as 'all' | 'active' | 'completed' | 'cancelled')
                     setCurrentRentalPage(1)
                   }}
-                  className="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto"
                 >
                   <option value="all">All Rentals</option>
                   <option value="active">Active</option>
@@ -786,9 +884,9 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                   <option value="cancelled">Cancelled</option>
                 </select>
                 {rentalFilter === 'all' && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 w-full sm:w-auto">
                     <label className="text-sm text-gray-600">Show Cancelled</label>
-                <button
+                    <button
                       onClick={() => setShowCancelled(!showCancelled)}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                         showCancelled ? 'bg-blue-600' : 'bg-gray-200'
@@ -799,7 +897,7 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                           showCancelled ? 'translate-x-6' : 'translate-x-1'
                         }`}
                       />
-                </button>
+                    </button>
                   </div>
                 )}
                 <select
@@ -808,7 +906,7 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                     setRentalGroupsPerPage(Number(e.target.value))
                     setCurrentRentalPage(1)
                   }}
-                  className="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto"
                 >
                   <option value="5">5 per page</option>
                   <option value="10">10 per page</option>
@@ -830,231 +928,337 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
               </div>
             ) : (
               <>
-              <div className="space-y-4">
-                  {paginatedRentalGroups.map((group) => (
-                    <div key={group.id} className="border rounded-lg p-4 space-y-3 hover:shadow-md transition-shadow">
-                    {/* Group Header */}
-                    <div className="flex justify-between items-start">
-                      <div>
-                          <div className="font-medium text-lg flex items-center gap-2">
-                            <Calendar className="w-5 h-5 text-blue-600" />
-                            Rental Group {new Date(group.created_at).toLocaleDateString()}
-                            {group.status === 'cancelled' && (
-                              <span className="text-sm text-red-600">
-                                (Cancelled on {new Date(group.cancelled_at!).toLocaleDateString()})
-                              </span>
-                            )}
-                        </div>
-                          <div className="text-sm text-gray-500 flex items-center gap-1 mt-1">
-                            <Clock className="w-4 h-4" />
-                          Due: {new Date(group.due_date).toLocaleDateString()}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                          {group.payment_status === 'unpaid' && group.status !== 'cancelled' ? (
+              <div className="space-y-6">
+                  {paginatedRentalGroups.map((group) => {
+                    const currentRental = getCurrentRental(apartmentTenants);
+                    const isCurrentRental = currentRental && currentRental.id === group.id;
+                    return (
+                      <div
+                        key={group.id}
+                        className={`bg-white border rounded-xl p-6 space-y-5 hover:shadow-lg transition-all duration-200 ${isCurrentRental ? 'border-2 border-blue-500 ring-2 ring-blue-200 relative' : 'border-gray-200'}`}
+                      >
+                        {/* Emphasize current rental badge */}
+                        {isCurrentRental && (
+                          <span className="absolute top-2 right-2 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow z-10">Current Rental</span>
+                        )}
+                        {/* Group Header */}
+                        <div className="flex justify-between items-start">
+                          <div className="space-y-3">
                             <div className="flex items-center gap-3">
-                              <div className={`px-4 py-2 rounded-lg border ${getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).bg} ${getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).border}`}>
-                                {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).warningText && (
-                                  <div className="flex items-center gap-2 mb-2">
-                                    <AlertTriangle className="w-4 h-4 text-orange-500" />
-                                    <div className="text-sm font-semibold text-orange-700">
-                                      {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).warningText}
-                                    </div>
-                                  </div>
-                                )}
-                                <div className="flex items-center gap-2">
-                                  <div className={`w-2 h-2 rounded-full ${getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).text}`} />
-                                  <div className="text-sm font-medium">
-                                    {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).status}
-                                  </div>
-                                </div>
-                                {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).timing && (
-                                  <div className={`text-xs mt-1 font-medium ${getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).timingColor || getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).text}`}>
-                                    {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).timing}
-                                  </div>
+                              <div className="p-2.5 bg-blue-50 rounded-lg">
+                                <Calendar className="w-5 h-5 text-blue-600" />
+                              </div>
+                              <div>
+                                <h3 className="text-lg font-semibold text-gray-900">
+                                  {`Rental Group ${new Date(group.created_at).toLocaleDateString()}`}
+                                </h3>
+                                {group.status === 'cancelled' && (
+                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 mt-1">
+                                    Cancelled on {new Date(group.cancelled_at!).toLocaleDateString()}
+                                  </span>
                                 )}
                               </div>
-                              <button
-                                onClick={() => handleOpenPaymentModal(group)}
-                            disabled={updatingStatus === group.id}
-                                className={`px-4 py-2 rounded-lg text-white text-sm font-medium flex items-center gap-2 transition-colors ${
-                                  getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning
-                                    ? 'bg-orange-600 hover:bg-orange-700'
-                                    : 'bg-blue-600 hover:bg-blue-700'
-                                } disabled:opacity-50`}
-                              >
-                                <CheckCircle className="w-4 h-4" />
-                                Add Payment
-                              </button>
-                          </div>
-                          ) : (
-                            <div className="flex items-center gap-2">
-                              <div className={`px-4 py-2 rounded-lg border ${getPaymentStatusColor(group.payment_status).bg} ${getPaymentStatusColor(group.payment_status).border}`}>
-                                <div className="flex items-center gap-2">
-                                  <div className={`w-2 h-2 rounded-full ${getPaymentStatusColor(group.payment_status).text}`} />
-                                  <div className="text-sm font-medium">
-                                    {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).status}
-                        </div>
-                                </div>
-                                {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).date && (
-                                  <div className={`text-xs mt-1 ${getPaymentStatusColor(group.payment_status).text}`}>
-                                    {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).date}
+                            </div>
+                            <div className="flex items-center gap-4">
+                              <div className="flex items-center gap-2 bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-100">
+                                <Clock className="w-4 h-4 text-orange-600" />
+                                <div>
+                                  <div className="text-xs font-medium text-orange-600">Due Date</div>
+                                  <div className="text-sm font-semibold text-orange-700">
+                                    {new Date(group.due_date).toLocaleDateString()}
                                   </div>
-                                )}
+                                </div>
                               </div>
-                              {/* LATE PAYMENT INDICATOR */}
-                              {(group.payment_status === 'late' || (group.payment_status === 'paid' && group.paid_at && new Date(group.paid_at) > new Date(group.due_date))) && (
-                                <div className="px-4 py-2 rounded-lg border bg-yellow-50 border-yellow-200 flex items-center gap-2">
-                                  <div className="w-2 h-2 rounded-full bg-yellow-600" />
-                                  <div className="text-sm font-medium text-yellow-700">
-                                    LATE PAYMENT
+                              <div className="flex items-center gap-2 bg-green-50 px-3 py-1.5 rounded-lg border border-green-100">
+                                <DollarSign className="w-4 h-4 text-green-600" />
+                                <div>
+                                  <div className="text-xs font-medium text-green-600">Monthly Rate</div>
+                                  <div className="text-sm font-semibold text-green-700">
+                                    {group.price.toLocaleString()} THB
                                   </div>
                                 </div>
-                              )}
+                              </div>
                             </div>
-                          )}
-                        <div className="relative">
-                          <div className={`px-3 py-2 rounded-lg text-sm font-medium border ${getStatusColor(group.status)}`}>
-                            {group.status.charAt(0).toUpperCase() + group.status.slice(1)}
                           </div>
-                        </div>
-                          {group.status !== 'completed' && (
-                            <div className="relative">
-                              <button
-                                onClick={() => setShowMoreOptions(showMoreOptions === group.id ? null : group.id)}
-                                className="p-1 hover:bg-gray-100 rounded"
-                              >
-                                <MoreVertical className="w-4 h-4 text-gray-600" />
-                              </button>
-                              {showMoreOptions === group.id && (
-                                <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg z-10 border">
-                                  <div className="py-1">
-                                    {group.status !== 'cancelled' ? (
-                                      <>
-                                        <button
-                                          onClick={() => {
-                                            setSelectedGroupId(group.id)
-                                            setShowAddToGroupModal(true)
-                                            setShowMoreOptions(null)
-                                          }}
-                                          className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-2"
-                                        >
-                                          <UserPlus className="w-4 h-4" />
-                                          Add Tenant
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            setSelectedRental(group)
-                                            setShowEditModal(true)
-                                            setShowMoreOptions(null)
-                                          }}
-                                          className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-2"
-                                        >
-                                          <Pencil className="w-4 h-4" />
-                                          Edit Rental
-                                        </button>
-                                        <button
-                                          onClick={() => {
-                                            setGroupToCancel({
-                                              id: group.id,
-                                              date: new Date(group.created_at).toLocaleDateString()
-                                            });
-                                            setShowCancelConfirm(true);
-                                            setShowMoreOptions(null);
-                                          }}
-                                          className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                        >
-                                          <XCircle className="w-4 h-4" />
-                                          Cancel Rental
-                                        </button>
-                                      </>
-                                    ) : (
-                                      <button
-                                        onClick={() => {
-                                          handleActivateRental(group.id);
-                                        }}
-                                        className="w-full text-left px-4 py-2 text-sm text-green-600 hover:bg-green-50 flex items-center gap-2"
-                                      >
-                                        <CheckCircle className="w-4 h-4" />
-                                        Activate Rental
-                                      </button>
-                                    )}
-                          </div>
-                        </div>
-                              )}
-                            </div>
-                          )}
-                      </div>
-                    </div>
-
-                    {/* Group Members */}
-                    <div className="bg-gray-50 rounded p-3">
-                        <div className="text-sm font-medium text-gray-700 mb-2">Tenants</div>
-                        {group.members.length === 0 ? (
-                          <div className="text-sm text-gray-500 italic">No tenants in this group</div>
-                        ) : (
-                      <div className="space-y-2">
-                        {group.members.map((member) => (
-                          <div key={member.tenant.id} className="flex justify-between items-center text-sm">
-                            <div>
-                              <div className="font-medium">{member.tenant.full_name}</div>
-                              {member.tenant.contact_info && (
-                                <div className="text-gray-500">{member.tenant.contact_info}</div>
-                              )}
-                            </div>
-                                <div className="flex items-center gap-3">
-                            <div className="text-gray-500 text-xs">
-                                    Added: {member.added_at ? new Date(member.added_at).toLocaleString('en-US', {
-                                      year: 'numeric',
-                                      month: 'short',
-                                      day: 'numeric'
-                                    }) : 'N/A'}
-                                  </div>
-                                  {group.status === 'active' && (
-                                    <div className="relative">
-                                      <button
-                                        onClick={() => setShowMoreOptions(showMoreOptions === `${group.id}-${member.tenant.id}` ? null : `${group.id}-${member.tenant.id}`)}
-                                        className="p-1 hover:bg-gray-100 rounded"
-                                      >
-                                        <MoreVertical className="w-4 h-4 text-gray-600" />
-                                      </button>
-                                      {showMoreOptions === `${group.id}-${member.tenant.id}` && (
-                                        <div className="absolute right-0 mt-1 w-48 bg-white rounded-md shadow-lg z-10 border">
-                                          <div className="py-1">
-                                            <button
-                                              onClick={() => {
-                                                setTenantToRemove({
-                                                  groupId: group.id,
-                                                  tenantId: member.tenant.id,
-                                                  tenantName: member.tenant.full_name
-                                                });
-                                                setShowRemoveConfirm(true);
-                                                setShowMoreOptions(null);
-                                              }}
-                                              className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                            >
-                                              <Trash2 className="w-4 h-4" />
-                                              Remove Tenant
-                                            </button>
-                                          </div>
-                                        </div>
-                                      )}
+                          <div className="flex items-center gap-3">
+                            {group.payment_status === 'unpaid' && group.status !== 'cancelled' ? (
+                              <div className="flex items-center gap-3">
+                                <div className={`px-4 py-2.5 rounded-lg border ${getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).bg} ${getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).border}`}>
+                                  {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).warningText && (
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <AlertTriangle className="w-4 h-4 text-orange-500" />
+                                      <div className="text-sm font-semibold text-orange-700">
+                                        {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).warningText}
+                                      </div>
                                     </div>
                                   )}
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).text}`} />
+                                    <div className="text-sm font-medium">
+                                      {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).status}
+                                    </div>
+                                  </div>
+                                  {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).timing && (
+                                    <div className={`text-xs mt-1 font-medium ${getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).timingColor || getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).text}`}>
+                                      {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).timing}
+                                    </div>
+                                  )}
+                                </div>
+                                {isCurrentRental && (
+                                  <button
+                                    onClick={() => handleOpenPaymentModal(group)}
+                                    disabled={updatingStatus === group.id}
+                                    className={`px-4 py-2.5 rounded-lg text-white text-sm font-medium flex items-center gap-2 transition-colors ${
+                                      getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning
+                                        ? 'bg-orange-600 hover:bg-orange-700'
+                                        : 'bg-blue-600 hover:bg-blue-700'
+                                    } disabled:opacity-50`}
+                                  >
+                                    <CheckCircle className="w-4 h-4" />
+                                    Add Payment
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <div className={`px-4 py-2.5 rounded-lg border ${getPaymentStatusColor(group.payment_status).bg} ${getPaymentStatusColor(group.payment_status).border}`}>
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${getPaymentStatusColor(group.payment_status).text}`} />
+                                    <div className="text-sm font-medium">
+                                      {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).status}
+                                    </div>
+                                  </div>
+                                  {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).date && (
+                                    <div className={`text-xs mt-1 ${getPaymentStatusColor(group.payment_status).text}`}>
+                                      {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).date}
+                                    </div>
+                                  )}
+                                </div>
+                                {/* LATE PAYMENT INDICATOR */}
+                                {(group.payment_status === 'late' || (group.payment_status === 'paid' && group.paid_at && new Date(group.paid_at) > new Date(group.due_date))) && (
+                                  <div className="px-4 py-2.5 rounded-lg border bg-yellow-50 border-yellow-200 flex items-center gap-2">
+                                    <div className="w-2 h-2 rounded-full bg-yellow-600" />
+                                    <div className="text-sm font-medium text-yellow-700">
+                                      LATE PAYMENT
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                            <div className="relative">
+                              <div className={`px-4 py-2.5 rounded-lg text-sm font-medium border ${getStatusColor(group.status)}`}>
+                                {group.status.charAt(0).toUpperCase() + group.status.slice(1)}
+                              </div>
                             </div>
+                              {group.status !== 'completed' && (
+                                <div className="relative">
+                                  <button
+                                    onClick={() => setShowMoreOptions(showMoreOptions === group.id ? null : group.id)}
+                                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                  >
+                                    <MoreVertical className="w-4 h-4 text-gray-600" />
+                                  </button>
+                                  {showMoreOptions === group.id && (
+                                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg z-10 border border-gray-200">
+                                      <div className="py-1">
+                                        {group.status !== 'cancelled' ? (
+                                          <>
+                                            <button
+                                              onClick={() => {
+                                                setSelectedGroupId(group.id)
+                                                setShowAddToGroupModal(true)
+                                                setShowMoreOptions(null)
+                                              }}
+                                              className="w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-2 transition-colors"
+                                            >
+                                              <UserPlus className="w-4 h-4" />
+                                              Add Tenant
+                                            </button>
+                                            <button
+                                              onClick={() => {
+                                                setSelectedRental(group)
+                                                setShowEditModal(true)
+                                                setShowMoreOptions(null)
+                                              }}
+                                              className="w-full text-left px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 flex items-center gap-2 transition-colors"
+                                            >
+                                              <Pencil className="w-4 h-4" />
+                                              Edit Rental
+                                            </button>
+                                            <button
+                                              onClick={() => {
+                                                setGroupToCancel({
+                                                  id: group.id,
+                                                  date: new Date(group.created_at).toLocaleDateString()
+                                                });
+                                                setShowCancelConfirm(true);
+                                                setShowMoreOptions(null);
+                                              }}
+                                              className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
+                                            >
+                                              <XCircle className="w-4 h-4" />
+                                              Cancel Rental
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <button
+                                            onClick={() => {
+                                              handleActivateRental(group.id);
+                                            }}
+                                            className="w-full text-left px-4 py-2.5 text-sm text-green-600 hover:bg-green-50 flex items-center gap-2 transition-colors"
+                                          >
+                                            <CheckCircle className="w-4 h-4" />
+                                            Activate Rental
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
                           </div>
-                        ))}
-                      </div>
-                        )}
-                    </div>
+                        </div>
 
-                    {/* Group Details */}
-                    <div className="text-sm text-gray-500">
-                      <div>Monthly Price: {group.price.toLocaleString()} THB</div>
-                        <div>Start Date: {new Date(group.assigned_date).toLocaleDateString()}</div>
-                    </div>
-                  </div>
-                ))}
+                        {/* Group Members */}
+                        <div className="bg-gray-50 rounded-lg p-4 border border-gray-100">
+                            <div className="flex items-center justify-between mb-4">
+                              <div className="flex items-center gap-2">
+                                <div className="p-2 bg-blue-50 rounded-lg">
+                                  <Users className="w-4 h-4 text-blue-600" />
+                                </div>
+                                <div>
+                                  <div className="text-sm font-medium text-gray-700">Tenants</div>
+                                  <div className="text-xs text-gray-500">{group.members.length} member{group.members.length !== 1 ? 's' : ''}</div>
+                                </div>
+                              </div>
+                              {group.status === 'active' && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedGroupId(group.id)
+                                    setShowAddToGroupModal(true)
+                                  }}
+                                  className="px-3 py-1.5 text-sm text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-1.5"
+                                >
+                                  <UserPlus className="w-3.5 h-3.5" />
+                                  Add Tenant
+                                </button>
+                              )}
+                            </div>
+                            {group.members.length === 0 ? (
+                              <div className="text-center py-6 bg-white rounded-lg border border-gray-100">
+                                <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                                <div className="text-sm text-gray-500">No tenants in this group</div>
+                                {group.status === 'active' && (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedGroupId(group.id)
+                                      setShowAddToGroupModal(true)
+                                    }}
+                                    className="mt-3 text-sm text-blue-600 hover:text-blue-700 hover:underline"
+                                  >
+                                    Add your first tenant
+                                  </button>
+                                )}
+                              </div>
+                            ) : (
+                              <div className="space-y-3">
+                                {group.members.map((member, index) => {
+                                  // Generate initials from full name
+                                  const initials = member.tenant.full_name
+                                    .split(' ')
+                                    .map(word => word[0])
+                                    .join('')
+                                    .toUpperCase()
+                                    .slice(0, 2);
+
+                                  // Color palette for profile pictures
+                                  const colors = [
+                                    'bg-blue-500 text-white',
+                                    'bg-green-500 text-white',
+                                    'bg-purple-500 text-white',
+                                    'bg-pink-500 text-white',
+                                    'bg-orange-500 text-white',
+                                    'bg-teal-500 text-white',
+                                    'bg-indigo-500 text-white',
+                                    'bg-red-500 text-white'
+                                  ];
+                                  const colorIndex = index % colors.length;
+                                  const bgColor = colors[colorIndex];
+
+                                  return (
+                                    <div key={member.tenant.id} className="bg-white rounded-lg p-4 border border-gray-100 hover:border-gray-200 transition-all duration-200 hover:shadow-sm">
+                                      <div className="flex justify-between items-start">
+                                        <div className="flex items-start gap-3">
+                                          <div className={`w-10 h-10 rounded-full ${bgColor} flex items-center justify-center font-medium text-sm`}>
+                                            {initials}
+                                          </div>
+                                          <div>
+                                            <div className="font-medium text-gray-900">{member.tenant.full_name}</div>
+                                            {member.tenant.contact_info && (
+                                              <div className="text-gray-500 text-xs mt-1 flex items-center gap-1.5">
+                                                <Phone className="w-3 h-3" />
+                                                {member.tenant.contact_info}
+                                              </div>
+                                            )}
+                                            <div className="text-gray-500 text-xs mt-1 flex items-center gap-1.5">
+                                              <Calendar className="w-3 h-3" />
+                                              Added: {member.added_at ? new Date(member.added_at).toLocaleString('en-US', {
+                                                year: 'numeric',
+                                                month: 'short',
+                                                day: 'numeric'
+                                              }) : 'N/A'}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        {group.status === 'active' && (
+                                          <div className="relative">
+                                            <button
+                                              onClick={() => setShowMoreOptions(showMoreOptions === `${group.id}-${member.tenant.id}` ? null : `${group.id}-${member.tenant.id}`)}
+                                              className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                                            >
+                                              <MoreVertical className="w-4 h-4 text-gray-600" />
+                                            </button>
+                                            {showMoreOptions === `${group.id}-${member.tenant.id}` && (
+                                              <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg z-10 border border-gray-200">
+                                                <div className="py-1">
+                                                  <button
+                                                    onClick={() => {
+                                                      setTenantToRemove({
+                                                        groupId: group.id,
+                                                        tenantId: member.tenant.id,
+                                                        tenantName: member.tenant.full_name
+                                                      });
+                                                      setShowRemoveConfirm(true);
+                                                      setShowMoreOptions(null);
+                                                    }}
+                                                    className="w-full text-left px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 flex items-center gap-2 transition-colors"
+                                                  >
+                                                    <Trash2 className="w-4 h-4" />
+                                                    Remove Tenant
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                        </div>
+
+                        {/* Group Details - Only show cancellation reason if exists */}
+                        {group.status === 'cancelled' && group.cancellation_reason && (
+                          <div className="flex items-center gap-2 text-red-600 text-sm border-t pt-4">
+                            <AlertTriangle className="w-4 h-4" />
+                            <span>{group.cancellation_reason}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Pagination */}
