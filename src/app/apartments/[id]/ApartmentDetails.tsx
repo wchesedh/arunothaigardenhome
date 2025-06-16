@@ -1067,6 +1067,9 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                   {paginatedRentalGroups.map((group) => {
                     const currentRental = getCurrentRental(apartmentTenants);
                     const isCurrentRental = currentRental && currentRental.id === group.id;
+                    const today = new Date();
+                    const dueDate = new Date(group.due_date);
+                    const isFutureRental = !isCurrentRental && group.payment_status === 'unpaid' && dueDate > today && group.status !== 'cancelled';
                     return (
                       <div
                         key={group.id}
@@ -1075,6 +1078,10 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                         {/* Emphasize current rental badge */}
                         {isCurrentRental && (
                           <span className="absolute top-2 right-2 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow z-10">Current Rental</span>
+                        )}
+                        {/* Pay Advance badge for future rentals */}
+                        {!isCurrentRental && isFutureRental && (
+                          <span className="absolute top-2 right-2 bg-green-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow z-10">Advance Payment</span>
                         )}
                         {/* Group Header */}
                         <div className="flex justify-between items-start">
@@ -1139,20 +1146,6 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                                     </div>
                                   )}
                                 </div>
-                                {isCurrentRental && (
-                                  <button
-                                    onClick={() => handleOpenPaymentModal(group)}
-                                    disabled={updatingStatus === group.id}
-                                    className={`px-4 py-2.5 rounded-lg text-white text-sm font-medium flex items-center gap-2 transition-colors ${
-                                      getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning
-                                        ? 'bg-orange-600 hover:bg-orange-700'
-                                        : 'bg-blue-600 hover:bg-blue-700'
-                                    } disabled:opacity-50`}
-                                  >
-                                    <CheckCircle className="w-4 h-4" />
-                                    Add Payment
-                                  </button>
-                                )}
                               </div>
                             ) : (
                               <div className="flex items-center gap-2">
@@ -1198,6 +1191,19 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                                       <div className="py-1">
                                         {group.status !== 'cancelled' ? (
                                           <>
+                                            {group.payment_status === 'unpaid' && (isCurrentRental || isFutureRental) && (
+                                              <button
+                                                onClick={() => {
+                                                  handleOpenPaymentModal(group);
+                                                  setShowMoreOptions(null);
+                                                }}
+                                                disabled={updatingStatus === group.id}
+                                                className={`w-full text-left px-4 py-2.5 text-sm font-medium flex items-center gap-2 ${isFutureRental ? 'text-blue-700' : 'text-blue-600'} hover:bg-blue-50 transition-colors`}
+                                              >
+                                                <CheckCircle className="w-4 h-4" />
+                                                {isFutureRental ? 'Advance Payment' : 'Add Payment'}
+                                              </button>
+                                            )}
                                             <button
                                               onClick={() => {
                                                 setSelectedGroupId(group.id)
