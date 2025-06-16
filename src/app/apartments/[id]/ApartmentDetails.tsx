@@ -121,6 +121,7 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
   const [currentPaymentPage, setCurrentPaymentPage] = useState(1)
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [showPaymentConfirm, setShowPaymentConfirm] = useState(false)
 
   const fetchApartmentTenants = async () => {
     try {
@@ -141,6 +142,46 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
       if (error) {
         console.error('Supabase error:', error)
         throw new Error(`Failed to fetch apartment tenants: ${error.message}`)
+      }
+
+      // Check for rentals that need to be marked as completed
+      const today = new Date()
+      const rentalsToUpdate = (data || []).filter(rental => 
+        rental.status === 'active' && 
+        rental.payment_status === 'paid' && 
+        new Date(rental.due_date) < today
+      )
+
+      if (rentalsToUpdate.length > 0) {
+        const { error: updateError } = await supabase
+          .from('apartment_tenants')
+          .update({ status: 'completed' })
+          .in('id', rentalsToUpdate.map(r => r.id))
+
+        if (updateError) {
+          console.error('Error updating rental statuses:', updateError)
+        } else {
+          // Refresh the data after updating
+          const { data: updatedData, error: refreshError } = await supabase
+            .from('apartment_tenants')
+            .select(`
+              *,
+              members:apartment_tenant_members(
+                id,
+                added_at,
+                tenant:tenants(*)
+              ),
+              previous_rental:apartment_tenants!previous_rental_id(*)
+            `)
+            .eq('apartment_id', apartment.id)
+            .order('created_at', { ascending: false })
+
+          if (!refreshError) {
+            setApartmentTenants(updatedData || [])
+            setHasExistingGroup(updatedData && updatedData.length > 0)
+            return
+          }
+        }
       }
 
       setApartmentTenants(data || [])
@@ -1778,11 +1819,15 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
               </button>
               <button
                 onClick={() => {
-                  if (renewRental && renewalTenants.length === 0) {
-                    alert('Please select at least one tenant for renewal')
-                    return
+                  if (renewRental) {
+                    if (renewalTenants.length === 0) {
+                      alert('Please select at least one tenant for renewal')
+                      return
+                    }
+                    setShowRenewalConfirm(true)
+                  } else {
+                    setShowPaymentConfirm(true)
                   }
-                  setShowRenewalConfirm(true)
                 }}
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
               >
@@ -1847,6 +1892,36 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
             window.location.reload()
           }}
         />
+      )}
+
+      {/* Payment Confirmation Modal */}
+      {showPaymentConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
+          <div className="bg-white rounded-lg p-6 w-[90%] max-w-sm shadow-xl">
+            <h3 className="text-lg font-semibold mb-4">Confirm Payment</h3>
+            <p className="text-gray-700 mb-6">
+              You are about to process a payment of {selectedRentalForPayment?.price.toLocaleString()} THB.<br />
+              Would you like to proceed?
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                className="px-4 py-2 text-gray-600 hover:underline"
+                onClick={() => setShowPaymentConfirm(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                onClick={() => {
+                  setShowPaymentConfirm(false)
+                  handlePayment()
+                }}
+              >
+                Confirm Payment
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

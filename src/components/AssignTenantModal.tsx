@@ -44,6 +44,8 @@ export default function AssignTenantModal({ apartmentId, apartmentName, onClose,
   const [dueDate, setDueDate] = useState('');
   const [price, setPrice] = useState('');
   const [apartment, setApartment] = useState<Apartment | null>(null);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [isRenewal, setIsRenewal] = useState(false);
 
   useEffect(() => {
     fetchApartmentDetails();
@@ -234,6 +236,53 @@ export default function AssignTenantModal({ apartmentId, apartmentName, onClose,
     setSelectedTenants(prev => prev.filter(t => t.id !== tenantId));
   };
 
+  const handleConfirm = async () => {
+    if (selectedTenants.length === 0) {
+      alert('Please select at least one tenant')
+      return
+    }
+
+    try {
+      const today = new Date()
+      const nextMonth = new Date()
+      nextMonth.setMonth(nextMonth.getMonth() + 1)
+
+      // Create new rental record
+      const { data: newRental, error: rentalError } = await supabase
+        .from('apartment_tenants')
+        .insert({
+          apartment_id: apartmentId,
+          assigned_date: today.toISOString(),
+          due_date: nextMonth.toISOString(),
+          price: parseFloat(price),
+          payment_status: 'unpaid',
+          status: 'active'
+        })
+        .select()
+        .single()
+
+      if (rentalError) throw rentalError
+
+      // Add selected tenants to the rental
+      const { error: membersError } = await supabase
+        .from('apartment_tenant_members')
+        .insert(
+          selectedTenants.map(tenant => ({
+            apartment_tenant_id: newRental.id,
+            tenant_id: tenant.id,
+            added_at: today.toISOString()
+          }))
+        )
+
+      if (membersError) throw membersError
+
+      onSaved()
+    } catch (err) {
+      console.error('Error creating rental:', err)
+      alert('Error creating rental. Please try again.')
+    }
+  }
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-40 z-50 flex items-center justify-center">
       <div className="bg-white rounded-lg p-6 w-[90%] max-w-2xl shadow-xl">
@@ -405,12 +454,48 @@ export default function AssignTenantModal({ apartmentId, apartmentName, onClose,
               Cancel
             </button>
             <button
-              onClick={handleSave}
+              onClick={() => {
+                if (selectedTenants.length === 0) {
+                  alert('Please select at least one tenant')
+                  return
+                }
+                if (!price) {
+                  alert('Please enter a monthly price')
+                  return
+                }
+                setShowConfirm(true)
+              }}
               className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
             >
               Create Rental
             </button>
           </div>
+
+          {showConfirm && (
+            <div className="mt-4 p-4 border rounded-lg bg-gray-50">
+              <p className="text-gray-700 mb-6">
+                You are about to create a new rental with {selectedTenants.length} tenant{selectedTenants.length !== 1 ? 's' : ''}.<br />
+                The rental period will start from today and be due next month.
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  className="px-4 py-2 text-gray-600 hover:underline"
+                  onClick={() => {
+                    setShowConfirm(false)
+                    setSelectedTenants([])
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  onClick={handleConfirm}
+                >
+                  Confirm Assignment
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
