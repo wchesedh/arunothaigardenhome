@@ -93,26 +93,20 @@ export default function ApartmentsPage() {
     const channel = supabase
       .channel('apartment_tenants_changes')
       .on(
-        'postgres_changes',
+        'postgres_changes' as any,
         {
           event: '*',
           schema: 'public',
           table: 'apartment_tenants'
         },
-        (payload: { 
-          new: ApartmentTenant | null
-          old: ApartmentTenant | null
-          eventType: 'INSERT' | 'UPDATE' | 'DELETE'
-        }) => {
-          if (payload.new) {
-            refreshApartmentData(payload.new.apartment_id)
-          }
+        () => {
+          fetchApartments()
         }
       )
       .subscribe()
 
     return () => {
-      supabase.removeChannel(channel)
+      channel.unsubscribe()
     }
   }, [])
 
