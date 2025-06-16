@@ -31,7 +31,8 @@ import {
   Upload,
   CheckCircle2,
   Clock2,
-  User
+  User,
+  Eye
 } from 'lucide-react'
 import AssignTenantModal from '@/components/AssignTenantModal'
 import AddTenantToGroupModal from '@/components/AddTenantToGroupModal'
@@ -999,11 +1000,13 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
 
           {/* Right Column - Rental Groups */}
           <div>
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
-              <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                <Users className="w-5 h-5 text-blue-600" />
-                Rental Groups
-              </h2>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-2">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-50 rounded-lg">
+                  <Users className="w-6 h-6 text-blue-600" />
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900">Rental Groups</h2>
+              </div>
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 w-full sm:w-auto">
                 <select
                   value={rentalFilter}
@@ -1018,36 +1021,56 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                   <option value="completed">Completed</option>
                   <option value="cancelled">Cancelled</option>
                 </select>
+                <div className="relative">
+                  <button
+                    onClick={() => setShowMoreOptions(showMoreOptions === 'header' ? null : 'header')}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <MoreVertical className="w-5 h-5 text-gray-600" />
+                  </button>
+                  {showMoreOptions === 'header' && (
+                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg z-10 border border-gray-200">
+                      <div className="py-1">
                 {rentalFilter === 'all' && (
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
-                    <label className="text-sm text-gray-600">Show Cancelled</label>
+                          <div className="px-4 py-2.5 flex items-center justify-between hover:bg-gray-50">
+                            <div className="flex items-center gap-2">
+                              <Eye className="w-4 h-4 text-gray-600" />
+                              <span className="text-sm text-gray-700">Show Cancelled</span>
+                            </div>
                     <button
                       onClick={() => setShowCancelled(!showCancelled)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                         showCancelled ? 'bg-blue-600' : 'bg-gray-200'
                       }`}
                     >
                       <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          showCancelled ? 'translate-x-6' : 'translate-x-1'
+                                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                                  showCancelled ? 'translate-x-5' : 'translate-x-1'
                         }`}
                       />
                     </button>
                   </div>
                 )}
+                        <div className="px-4 py-2.5">
+                          <label className="text-sm text-gray-700 mb-1.5 block">Items per page</label>
                 <select
                   value={rentalGroupsPerPage}
                   onChange={(e) => {
                     setRentalGroupsPerPage(Number(e.target.value))
                     setCurrentRentalPage(1)
                   }}
-                  className="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-full sm:w-auto"
+                            className="w-full px-3 py-1.5 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="5">5 per page</option>
                   <option value="10">10 per page</option>
                   <option value="20">20 per page</option>
                   <option value="50">50 per page</option>
                 </select>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -1073,37 +1096,45 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                     return (
                       <div
                         key={group.id}
-                        className={`bg-white border rounded-xl p-6 space-y-5 hover:shadow-lg transition-all duration-200 ${isCurrentRental ? 'border-2 border-blue-500 ring-2 ring-blue-200 relative' : 'border-gray-200'}`}
+                        className={`bg-white border rounded-xl p-4 space-y-4 hover:shadow-lg transition-all duration-200 relative ${
+                          isCurrentRental ? 'border-2 border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+                        }`}
                       >
-                        {/* Emphasize current rental badge */}
+                        {/* Current rental badge */}
                         {isCurrentRental && (
-                          <span className="absolute top-2 right-2 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow z-10">Current Rental</span>
+                          <div className="absolute -top-3 left-4 bg-blue-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-sm flex items-center gap-1.5 z-10">
+                            <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                            Current Rental
+                          </div>
                         )}
                         {/* Pay Advance badge for future rentals */}
                         {!isCurrentRental && isFutureRental && (
-                          <span className="absolute top-2 right-2 bg-green-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow z-10">Advance Payment</span>
+                          <div className="absolute -top-3 left-4 bg-green-600 text-white text-xs font-bold px-3 py-1 rounded-full shadow-sm flex items-center gap-1.5 z-10">
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                            Reserved
+                          </div>
                         )}
                         {/* Group Header */}
-                        <div className="flex justify-between items-start">
-                          <div className="space-y-3">
-                            <div className="flex items-center gap-3">
-                              <div className="p-2.5 bg-blue-50 rounded-lg">
-                                <Calendar className="w-5 h-5 text-blue-600" />
+                        <div className="flex flex-col sm:flex-row justify-between items-start gap-3">
+                          <div className="space-y-2 flex-1">
+                            <div className="flex items-start gap-2">
+                              <div className="p-2 bg-blue-50 rounded-lg shrink-0 mt-1">
+                                <Calendar className="w-4 h-4 text-blue-600" />
                               </div>
                               <div>
-                                <h3 className="text-lg font-semibold text-gray-900">
+                                <h3 className="text-base font-semibold text-gray-900">
                                   {`Rental Group ${new Date(group.created_at).toLocaleDateString()}`}
                                 </h3>
                                 {group.status === 'cancelled' && (
-                                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 mt-1">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 mt-1">
                                     Cancelled on {new Date(group.cancelled_at!).toLocaleDateString()}
                                   </span>
                                 )}
                               </div>
                             </div>
-                            <div className="flex items-center gap-4">
-                              <div className="flex items-center gap-2 bg-orange-50 px-3 py-1.5 rounded-lg border border-orange-100">
-                                <Clock className="w-4 h-4 text-orange-600" />
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex items-center gap-1.5 bg-orange-50 px-2 py-1 rounded-lg border border-orange-100">
+                                <Clock className="w-3.5 h-3.5 text-orange-600 shrink-0" />
                                 <div>
                                   <div className="text-xs font-medium text-orange-600">Due Date</div>
                                   <div className="text-sm font-semibold text-orange-700">
@@ -1111,8 +1142,8 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                                   </div>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2 bg-green-50 px-3 py-1.5 rounded-lg border border-green-100">
-                                <DollarSign className="w-4 h-4 text-green-600" />
+                              <div className="flex items-center gap-1.5 bg-green-50 px-2 py-1 rounded-lg border border-green-100">
+                                <DollarSign className="w-3.5 h-3.5 text-green-600 shrink-0" />
                                 <div>
                                   <div className="text-xs font-medium text-green-600">Monthly Rate</div>
                                   <div className="text-sm font-semibold text-green-700">
@@ -1122,21 +1153,23 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-3">
+                          <div className="flex flex-wrap items-start gap-2 shrink-0">
+                            {/* Status badges */}
+                            <div className="flex flex-wrap items-center gap-2">
                             {group.payment_status === 'unpaid' && group.status !== 'cancelled' ? (
-                              <div className="flex items-center gap-3">
-                                <div className={`px-4 py-2.5 rounded-lg border ${getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).bg} ${getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).border}`}>
+                                <div className="flex items-center gap-2">
+                                  <div className={`px-3 py-2 rounded-lg border ${getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).bg} ${getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).border}`}>
                                   {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).warningText && (
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <AlertTriangle className="w-4 h-4 text-orange-500" />
-                                      <div className="text-sm font-semibold text-orange-700">
+                                      <div className="flex items-center gap-1.5 mb-1.5">
+                                        <AlertTriangle className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+                                        <div className="text-xs font-semibold text-orange-700">
                                         {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).warningText}
                                       </div>
                                     </div>
                                   )}
-                                  <div className="flex items-center gap-2">
-                                    <div className={`w-2 h-2 rounded-full ${getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).text}`} />
-                                    <div className="text-sm font-medium">
+                                    <div className="flex items-center gap-1.5">
+                                      <div className={`w-1.5 h-1.5 rounded-full ${getPaymentStatusColor(group.payment_status, getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning, group.due_date).text}`} />
+                                      <div className="text-xs font-medium">
                                       {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).status}
                                     </div>
                                   </div>
@@ -1149,10 +1182,10 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                               </div>
                             ) : (
                               <div className="flex items-center gap-2">
-                                <div className={`px-4 py-2.5 rounded-lg border ${getPaymentStatusColor(group.payment_status).bg} ${getPaymentStatusColor(group.payment_status).border}`}>
-                                  <div className="flex items-center gap-2">
-                                    <div className={`w-2 h-2 rounded-full ${getPaymentStatusColor(group.payment_status).text}`} />
-                                    <div className="text-sm font-medium">
+                                  <div className={`px-3 py-2 rounded-lg border ${getPaymentStatusColor(group.payment_status).bg} ${getPaymentStatusColor(group.payment_status).border}`}>
+                                    <div className="flex items-center gap-1.5">
+                                      <div className={`w-1.5 h-1.5 rounded-full ${getPaymentStatusColor(group.payment_status).text}`} />
+                                      <div className="text-xs font-medium">
                                       {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).status}
                                     </div>
                                   </div>
@@ -1164,9 +1197,9 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                                 </div>
                                 {/* LATE PAYMENT INDICATOR */}
                                 {(group.payment_status === 'late' || (group.payment_status === 'paid' && group.paid_at && new Date(group.paid_at) > new Date(group.due_date))) && (
-                                  <div className="px-4 py-2.5 rounded-lg border bg-yellow-50 border-yellow-200 flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full bg-yellow-600" />
-                                    <div className="text-sm font-medium text-yellow-700">
+                                    <div className="px-3 py-2 rounded-lg border bg-yellow-50 border-yellow-200 flex items-center gap-1.5">
+                                      <div className="w-1.5 h-1.5 rounded-full bg-yellow-600" />
+                                      <div className="text-xs font-medium text-yellow-700">
                                       LATE PAYMENT
                                     </div>
                                   </div>
@@ -1174,20 +1207,22 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                               </div>
                             )}
                             <div className="relative">
-                              <div className={`px-4 py-2.5 rounded-lg text-sm font-medium border ${getStatusColor(group.status)}`}>
+                                <div className={`px-3 py-2 rounded-lg text-xs font-medium border ${getStatusColor(group.status)}`}>
                                 {group.status.charAt(0).toUpperCase() + group.status.slice(1)}
                               </div>
                             </div>
+                            </div>
+                            {/* More options button */}
                               {group.status !== 'completed' && (
                                 <div className="relative">
                                   <button
                                     onClick={() => setShowMoreOptions(showMoreOptions === group.id ? null : group.id)}
-                                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                  className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
                                   >
                                     <MoreVertical className="w-4 h-4 text-gray-600" />
                                   </button>
                                   {showMoreOptions === group.id && (
-                                    <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg z-10 border border-gray-200">
+                                  <div className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg z-10 border border-gray-200">
                                       <div className="py-1">
                                         {group.status !== 'cancelled' ? (
                                           <>
@@ -1268,8 +1303,14 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                                   <Users className="w-4 h-4 text-blue-600" />
                                 </div>
                                 <div>
-                                  <div className="text-sm font-medium text-gray-700">Tenants</div>
-                                  <div className="text-xs text-gray-500">{group.members.length} member{group.members.length !== 1 ? 's' : ''}</div>
+                                  <div className="text-sm font-medium text-gray-700">
+                                    {group.members.length === 1 ? 'Tenant' : 'Tenants'}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {group.members.length === 0 ? 'No members' : 
+                                     group.members.length === 1 ? '1 member' : 
+                                     `${group.members.length} members`}
+                                  </div>
                                 </div>
                               </div>
                               {group.status === 'active' && (
