@@ -19,6 +19,18 @@ type Apartment = {
   paid_at: string | null
 }
 
+type ApartmentTenant = {
+  id: string
+  apartment_id: string
+  assigned_date: string
+  due_date: string
+  price: number
+  payment_status: 'paid' | 'unpaid' | 'late'
+  status: 'active' | 'completed' | 'ended'
+  created_at: string
+  paid_at: string | null
+}
+
 export default function ApartmentsPage() {
   const router = useRouter()
   const [apartments, setApartments] = useState<Apartment[]>([])
@@ -41,7 +53,7 @@ export default function ApartmentsPage() {
     if (!error && data) {
       setApartments(data)
       // Fetch tenants for each apartment
-      data.forEach(apartment => fetchApartmentTenants(apartment.id))
+      await Promise.all(data.map(apartment => fetchApartmentTenants(apartment.id)))
     } else console.error('Error fetching apartments:', error)
   }
 
@@ -60,8 +72,48 @@ export default function ApartmentsPage() {
     }
   }
 
+  // Add refresh function
+  const refreshApartmentData = async (apartmentId: string) => {
+    await fetchApartmentTenants(apartmentId)
+  }
+
   useEffect(() => {
     fetchApartments()
+
+    // Set up polling to refresh data every 5 seconds
+    const interval = setInterval(() => {
+      fetchApartments()
+    }, 5000)
+
+    return () => clearInterval(interval)
+  }, [])
+
+  // Add event listener for rental updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('apartment_tenants_changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'apartment_tenants'
+        },
+        (payload: { 
+          new: ApartmentTenant | null
+          old: ApartmentTenant | null
+          eventType: 'INSERT' | 'UPDATE' | 'DELETE'
+        }) => {
+          if (payload.new) {
+            refreshApartmentData(payload.new.apartment_id)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
   }, [])
 
   const getApartmentStatus = (apartmentId: string) => {
@@ -167,16 +219,21 @@ export default function ApartmentsPage() {
     }
   }
 
-  const getPaymentStatus = (apartment: Apartment) => {
-    if (!apartment.next_payment_due) return null
+  const getPaymentStatus = (apartmentId: string) => {
+    const activeRentals = apartmentTenants[apartmentId] || []
+    const activeRental = activeRentals[0] // Get the first active rental
+
+    if (!activeRental) return null
 
     const today = new Date()
-    const dueDate = new Date(apartment.next_payment_due)
-    const isLate = today > dueDate && apartment.payment_status !== 'paid'
+    const dueDate = new Date(activeRental.due_date)
+    const isLate = today > dueDate && activeRental.payment_status !== 'paid'
 
     return {
-      status: apartment.payment_status === 'paid' ? 'paid' : 'unpaid',
-      isLate: isLate || apartment.payment_status === 'late'
+      status: activeRental.payment_status,
+      isLate: isLate || activeRental.payment_status === 'late',
+      dueDate: activeRental.due_date,
+      price: activeRental.price
     }
   }
 
@@ -234,38 +291,38 @@ export default function ApartmentsPage() {
 
           {/* Table */}
           <div className="overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-100">
-                <tr>
-                  <th className="text-left px-4 py-2 cursor-pointer" onClick={() => toggleSort('name')}>
-                    Name{getSortIndicator('name')}
+            <table className="min-w-full bg-white">
+              <thead>
+                <tr className="bg-gray-50">
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => toggleSort('name')}>
+                    Name {getSortIndicator('name')}
                   </th>
-                  <th className="text-left px-4 py-2 cursor-pointer" onClick={() => toggleSort('description')}>
-                    Description{getSortIndicator('description')}
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => toggleSort('description')}>
+                    Description {getSortIndicator('description')}
                   </th>
-                  <th className="text-left px-4 py-2 cursor-pointer" onClick={() => toggleSort('base_price')}>
-                    Base Price{getSortIndicator('base_price')}
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => toggleSort('base_price')}>
+                    Base Price {getSortIndicator('base_price')}
                   </th>
-                  <th className="text-left px-4 py-2 cursor-pointer" onClick={() => toggleSort('room_count')}>
-                    Rooms{getSortIndicator('room_count')}
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer" onClick={() => toggleSort('room_count')}>
+                    Rooms {getSortIndicator('room_count')}
                   </th>
-                  <th className="text-left px-4 py-2">
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
                   </th>
-                  <th className="text-left px-4 py-2">
-                    Payment
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Payment Status
                   </th>
-                  <th className="text-left px-4 py-2">
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Due Date
                   </th>
-                  <th className="text-left px-4 py-2">
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Actions
                   </th>
                 </tr>
               </thead>
               <tbody>
                 {paginated.map((apartment) => {
-                  const paymentStatus = getPaymentStatus(apartment)
+                  const paymentStatus = getPaymentStatus(apartment.id)
                   return (
                     <tr key={apartment.id} className="border-b hover:bg-gray-50">
                       <td className="px-4 py-2">{apartment.name}</td>
@@ -284,28 +341,29 @@ export default function ApartmentsPage() {
                       </td>
                       <td className="px-4 py-2">
                         {paymentStatus ? (
-                          <div className="flex items-center gap-2">
-                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPaymentStatusColor(paymentStatus.status)}`}>
-                              {paymentStatus.status.toUpperCase()}
-                            </span>
-                            {paymentStatus.isLate && (
-                              <span className="text-xs text-yellow-600 font-medium">
-                                Overdue
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPaymentStatusColor(paymentStatus.status)}`}>
+                                {paymentStatus.status.toUpperCase()}
                               </span>
-                            )}
+                              {paymentStatus.isLate && (
+                                <span className="text-xs text-red-600 font-medium">
+                                  Overdue
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs font-medium text-gray-800">
+                              {paymentStatus.price.toLocaleString()} THB
+                            </div>
                           </div>
                         ) : (
                           <span className="text-gray-500 text-xs">No active rental</span>
                         )}
                       </td>
                       <td className="px-4 py-2">
-                        {apartment.next_payment_due ? (
-                          <div className="text-xs text-gray-800">
-                            {new Date(apartment.next_payment_due).toLocaleDateString('en-US', {
-                              year: 'numeric',
-                              month: 'long',
-                              day: 'numeric'
-                            })}
+                        {paymentStatus ? (
+                          <div className="text-sm text-gray-600">
+                            {new Date(paymentStatus.dueDate).toLocaleDateString()}
                           </div>
                         ) : (
                           <span className="text-gray-500 text-xs">-</span>

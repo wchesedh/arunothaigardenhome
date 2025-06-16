@@ -2,6 +2,7 @@ import { Suspense } from 'react'
 import { use } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import AdminLayout from '@/components/layouts/AdminLayout'
+import ProtectedRoute from '@/components/ProtectedRoute'
 import { ArrowLeft } from 'lucide-react'
 import ApartmentDetails from './ApartmentDetails'
 
@@ -30,16 +31,18 @@ export default function ApartmentDetailsPage({ params }: { params: Promise<{ id:
   const apartmentPromise = getApartment(resolvedParams.id)
 
   return (
-    <AdminLayout>
-      <Suspense fallback={
-        <div className="p-6">
-          <div className="bg-white rounded shadow p-6">
-            <p className="text-gray-600">Loading apartment details...</p>
+    <ProtectedRoute>
+      <AdminLayout>
+        <Suspense fallback={
+          <div className="p-6">
+            <div className="bg-white rounded shadow p-6">
+              <p className="text-gray-600">Loading apartment details...</p>
+            </div>
           </div>
-        </div>
-      }>
-        <ApartmentDetails apartmentPromise={apartmentPromise} />
-      </Suspense>
-    </AdminLayout>
+        }>
+          <ApartmentDetails apartmentPromise={apartmentPromise} />
+        </Suspense>
+      </AdminLayout>
+    </ProtectedRoute>
   )
 } 
