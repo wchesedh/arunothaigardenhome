@@ -332,10 +332,13 @@ export default function ApartmentsPage() {
                       </td>
                       <td className="px-4 py-2">{apartment.name}</td>
                       <td className="px-4 py-2">
-                        <div 
-                          className="prose prose-sm max-w-none"
-                          dangerouslySetInnerHTML={{ __html: apartment.description }}
-                        />
+                        <div className="max-w-[300px]">
+                          <div 
+                            className="prose prose-sm max-w-none line-clamp-6"
+                            dangerouslySetInnerHTML={{ __html: apartment.description }}
+                            title={apartment.description.replace(/<[^>]*>/g, '')}
+                          />
+                        </div>
                       </td>
                       <td className="px-4 py-2">{apartment.base_price.toLocaleString()} THB</td>
                       <td className="px-4 py-2">{apartment.room_count}</td>
