@@ -111,7 +111,8 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
   const [loadingPayments, setLoadingPayments] = useState(false)
   const [rentalGroupsPerPage, setRentalGroupsPerPage] = useState(5)
   const [currentRentalPage, setCurrentRentalPage] = useState(1)
-  const [rentalFilter, setRentalFilter] = useState<'all' | 'active' | 'completed' | 'ended' | 'cancelled'>('all')
+  const [rentalFilter, setRentalFilter] = useState<'all' | 'active' | 'completed' | 'cancelled'>('all')
+  const [showCancelled, setShowCancelled] = useState(false)
 
   const fetchApartmentTenants = async () => {
     try {
@@ -542,8 +543,10 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
   }
 
   const filteredRentalGroups = apartmentTenants.filter(group => {
-    if (rentalFilter === 'all') return true
-    return group.status === rentalFilter
+    if (rentalFilter === 'all') {
+      return showCancelled ? true : group.status !== 'cancelled';
+    }
+    return group.status === rentalFilter;
   })
 
   const paginatedRentalGroups = filteredRentalGroups.slice(
@@ -772,7 +775,7 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                 <select
                   value={rentalFilter}
                   onChange={(e) => {
-                    setRentalFilter(e.target.value as 'all' | 'active' | 'completed' | 'ended' | 'cancelled')
+                    setRentalFilter(e.target.value as 'all' | 'active' | 'completed' | 'cancelled')
                     setCurrentRentalPage(1)
                   }}
                   className="px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -780,9 +783,25 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                   <option value="all">All Rentals</option>
                   <option value="active">Active</option>
                   <option value="completed">Completed</option>
-                  <option value="ended">Ended</option>
                   <option value="cancelled">Cancelled</option>
                 </select>
+                {rentalFilter === 'all' && (
+                  <div className="flex items-center gap-2">
+                    <label className="text-sm text-gray-600">Show Cancelled</label>
+                <button
+                      onClick={() => setShowCancelled(!showCancelled)}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                        showCancelled ? 'bg-blue-600' : 'bg-gray-200'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          showCancelled ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
+                </button>
+                  </div>
+                )}
                 <select
                   value={rentalGroupsPerPage}
                   onChange={(e) => {
@@ -857,7 +876,7 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                               </div>
                               <button
                                 onClick={() => handleOpenPaymentModal(group)}
-                                disabled={updatingStatus === group.id}
+                            disabled={updatingStatus === group.id}
                                 className={`px-4 py-2 rounded-lg text-white text-sm font-medium flex items-center gap-2 transition-colors ${
                                   getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isWarning
                                     ? 'bg-orange-600 hover:bg-orange-700'
@@ -875,7 +894,7 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                                   <div className={`w-2 h-2 rounded-full ${getPaymentStatusColor(group.payment_status).text}`} />
                                   <div className="text-sm font-medium">
                                     {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).status}
-                                  </div>
+                        </div>
                                 </div>
                                 {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).date && (
                                   <div className={`text-xs mt-1 ${getPaymentStatusColor(group.payment_status).text}`}>
@@ -883,13 +902,12 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                                   </div>
                                 )}
                               </div>
-                              {getPaymentStatusText(group.payment_status, group.paid_at, group.due_date).isLatePayment && (
-                                <div className="px-4 py-2 rounded-lg border bg-yellow-50 border-yellow-200">
-                                  <div className="flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full bg-yellow-600" />
-                                    <div className="text-sm font-medium text-yellow-700">
-                                      LATE PAYMENT
-                                    </div>
+                              {/* LATE PAYMENT INDICATOR */}
+                              {(group.payment_status === 'late' || (group.payment_status === 'paid' && group.paid_at && new Date(group.paid_at) > new Date(group.due_date))) && (
+                                <div className="px-4 py-2 rounded-lg border bg-yellow-50 border-yellow-200 flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full bg-yellow-600" />
+                                  <div className="text-sm font-medium text-yellow-700">
+                                    LATE PAYMENT
                                   </div>
                                 </div>
                               )}
@@ -961,8 +979,8 @@ export default function ApartmentDetails({ apartmentPromise }: { apartmentPromis
                                         Activate Rental
                                       </button>
                                     )}
-                                  </div>
-                                </div>
+                          </div>
+                        </div>
                               )}
                             </div>
                           )}
